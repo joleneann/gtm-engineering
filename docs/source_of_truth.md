@@ -27,6 +27,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 13 | 2026-09-02 | Address gate reads the history JSON first and falls back to the XML filing. Measured: 168 of 2,937 companies have no history address and the filing covers all 168, so no missing-address reason code is created | |
 | 14 | 2026-09-02 | `serviceable_countries` stores EDGAR's own two-character country codes, each looked up against EDGAR's published list rather than inferred | |
 | 15 | 2026-09-02 | `mill_list` membership counts distinct companies, not occurrences. Measured: of 213 values occurring more than three times, 101 are one company's own address or phone, and excluding all 213 would strip both address and phone from 56 of 830 surviving companies | `appearing more than thrice in the data` |
+| 16 | 2026-09-02 | `rolled_filing_count` joins the Clay payload, so a summed amount is never mistaken for a single raise. The column already exists on `outbound_companies_scored`; no schema change | |
 
 ---
 
@@ -347,6 +348,7 @@ IDX = Filing Index, XML = Filing, JSON = Company History
 | `amount_remaining` | XML | |
 | `industry` | XML industry group type | |
 | `prior_formd_count` | JSON recent Form D filings counted | |
+| `rolled_filing_count` | Rollup | **How many Form D filings were added together to produce `amount_sold`.** 1 for most companies. Measured: 113 of 830 roll up more than one filing, and the largest is a note-issuing vehicle with 27 in twelve months. Without it, a summed figure is indistinguishable from a single raise, and copy generated from the row could describe twenty-seven issuances as one round |
 | `filing_date` | IDX | |
 | `score` | | |
 
