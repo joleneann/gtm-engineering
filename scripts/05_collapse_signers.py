@@ -139,6 +139,15 @@ def main():
     t0 = time.time()
     say("Collapse companies that share a signer\n")
 
+    # The registry is closed: no script mints a code at runtime. The constraint
+    # on dedupe_status already accepts this value, so without this check a row
+    # could carry a code that reason_codes does not contain and the funnel
+    # would count something it cannot name.
+    codes = {r["code"] for r in get_all("reason_codes", "code")}
+    if "dupe_same_signer" not in codes:
+        sys.exit("reason_codes has no 'dupe_same_signer'. Apply PART B of "
+                 "db/migration_005_signer_and_email_dedupe.sql first.")
+
     unscored = get_all("outbound_companies_unscored", "cik,name_of_signer,filing_date")
     scored = get_all("outbound_companies_scored",
                      "cik,current_name_candidates,score,dedupe_status,collapsed_into_cik")
