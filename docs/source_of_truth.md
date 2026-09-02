@@ -40,6 +40,8 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 26 | 2026-09-03 | A filing writing `N/A` in a name or phone box means there is no value, and it is dropped rather than shipped. It reached the payload as the phone to chase and as `N/A Lamar Advertising General Partner, LLC` in `people`, because a related person is often an entity and the surname box holds the company | |
 | 27 | 2026-09-03 | The Clay payload is reordered into the order the work is done in, and `also_signed_for` moves beside `contact_name` because it is a fact about the signer. `website_from_edgar` is dropped from the payload: measured empty on all 830, it was 200 blank cells in a table a person reads. The column stays in Supabase | `Kept because it costs nothing and would save a credit if it ever fired` |
 | 28 | 2026-09-03 | `people` excludes whoever is in `contact_name`, matched on first and last name with initials and honorifics dropped, so the two columns never repeat one human. Removed from 675 of 800 rows; 173 rows now have an empty `people`. Columns renamed for the destination: `current_name` singular, measured 799 of 800 single-valued, and `former_names` | |
+| 29 | 2026-09-03 | Phones ship as digits only with the country code first and no plus sign, because a plus asserts a country code we can only verify for US numbers and would turn the one malformed value into a confident claim about the wrong country | `E.164 for US numbers` |
+| 30 | 2026-09-03 | Block capitals are calmed on export, per comma-separated segment so acronyms inside mixed-case text survive. Measured: 20 fields keep a capitalised word and every one is a genuine acronym | |
 
 ---
 
@@ -382,7 +384,7 @@ that confirms an answer, then the facts the copy is built from.
 | 6 | `also_signed_for` | Signer collapse | The other companies this same person signed for. It sits beside `contact_name` because it is a fact about that person, not about this company |
 | 7 | `people` | XML related persons first name + last name + relationship, **excluding whoever is in `contact_name`** | More humans to find, and to corroborate a domain. Officers may be contacted, directors and promoters never are |
 | 8 | `address_candidates` | XML issuer street, city, state, zipcode + JSON street, city, state, country, zipcode. Deduped against `mill_list`. Strip punctuation, expand street types, map state to 2-letter code | **Corroboration only.** Confirms a domain, never disqualifies one |
-| 9 | `phone_candidates` | XML issuer phone number and JSON phone, as E.164 for US numbers. Deduped on `mill_list`. Keep both if different | **Corroboration only**, on the same terms |
+| 9 | `phone_candidates` | XML issuer phone number and JSON phone, digits only with the country code first. Deduped on `mill_list`. Keep both if different | **Corroboration only**, on the same terms |
 | 10 | `industry` | XML industry group type | |
 | 11 | `amount_sold` | XML | |
 | 12 | `amount_remaining` | XML | |
@@ -434,13 +436,28 @@ boxes carry `N/A` and the surname box carries the company. Joined naively that r
 `N/A Lamar Advertising General Partner, LLC` and as `Andrew n/a Millard`. Both are cleaned where the
 candidate is built, not on the way out, so the payload table itself is clean.
 
-**Phones leave in one written format: E.164 for US numbers.** Measured: 872 phone values arrived in
-five spellings of the same thing, `650-549-1400`, `(650) 549-1400`, `6505491400`, `650.549.1400` and
-worse. Claygent reads them alike, but the dedupe after Clay compares phones as strings, and two
-spellings of one number match nothing while reporting success, which means emailing a customer we
-already have. **No country code is ever guessed**: `44 7835 097 128` is a real UK number and
-`757-434-25343` is a typo, so anything that is not a recognisable US number keeps its digits untouched.
-Measured on the export: 842 US, 12 non-US or malformed.
+**Phones leave in one written format: digits only, country code first, nothing else.** Measured: 872
+phone values arrived in five spellings of the same thing, `650-549-1400`, `(650) 549-1400`,
+`6505491400`, `650.549.1400` and worse. Claygent reads them alike, but the dedupe after Clay compares
+phones as strings, and two spellings of one number match nothing while reporting success, which means
+emailing a customer we already have. A US number gains its leading 1 so it has the same shape as the
+rest.
+
+**There is no plus sign, and that is deliberate rather than untidy.** A plus asserts that the digits
+after it are a real country code, which is only knowable for the US numbers here. `44 7835 097 128` is
+a genuine UK number and `757-434-25343` is a typo, and prefixing both would turn the typo into a
+confident claim about Russia. Digits alone assert nothing, compare exactly, and a dialler can add the
+plus once a country is established. Measured on the export: 854 values, 842 US, 12 non-US or
+malformed and left exactly as their digits.
+
+**Block capitals are calmed on export.** Many filers type in caps lock, and `SAGAR KADAKIA` and
+`1 LIBERTY STREET` read worse than `Sagar Kadakia` and `1 Liberty Street`, besides making a name look
+like an acronym. This is applied per comma-separated **segment**, never per field or per word, so a
+real acronym inside ordinary text survives: `FSH Technologies`, `EXUMA Biotech` and `AURA Network
+Systems` keep their capitals because those segments are mixed case, while `NEW YORK` sitting beside a
+title-cased street does not. Within a calmed segment, a token holding a digit, a legal suffix or a
+state code is left alone, so `DS1`, `LLC` and `NY` stay as filed. It is presentation only: Supabase
+keeps what the filing said.
 
 **`people` is stored as JSON and sent to Clay as one plain-text column.** Supabase keeps it structured
 because the truth layer is SQL and a question like how many companies name a CFO on the filing is a

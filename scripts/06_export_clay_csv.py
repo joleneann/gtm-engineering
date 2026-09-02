@@ -168,6 +168,70 @@ def flat_people(people):
     return SEP.join(out)
 
 
+# Tokens that stay shouting when a SHOUTED field is calmed down: legal suffixes,
+# US state and country codes, and the directional and ordinal scraps of an
+# address. Anything containing a digit is left exactly as filed, so DS1 and
+# 169 do not become Ds1 and 169th by accident.
+KEEP_UPPER = {
+    "LLC", "L.L.C.", "LLP", "LP", "L.P.", "PLLC", "INC", "INC.", "CORP", "CORP.",
+    "PBC", "PC", "PA", "CO", "CO.", "LTD", "LTD.", "GP", "SPV", "REIT", "USA",
+    "US", "UK", "AI", "IT", "HQ", "PO", "II", "III", "IV", "V", "VI",
+    "N", "S", "E", "W", "NE", "NW", "SE", "SW", "NY", "CA", "TX", "FL", "DE",
+    "IL", "MA", "WA", "CO", "GA", "NC", "NJ", "PA", "VA", "AZ", "MI", "OH",
+    "MO", "MN", "MD", "TN", "IN", "WI", "OR", "SC", "AL", "KY", "LA", "OK",
+    "CT", "UT", "IA", "NV", "AR", "MS", "KS", "NM", "NE", "WV", "ID", "HI",
+    "NH", "ME", "MT", "RI", "SD", "ND", "AK", "VT", "WY", "DC", "PR",
+}
+
+
+def _calm_words(seg):
+    out = []
+    for tok in seg.split(" "):
+        bare = tok.strip(",.()")
+        if not bare or any(c.isdigit() for c in bare) or bare.upper() in KEEP_UPPER:
+            out.append(tok)
+        elif "-" in tok:
+            out.append("-".join(w.capitalize() for w in tok.split("-")))
+        else:
+            out.append(tok.capitalize())
+    return " ".join(out)
+
+
+def calm(value):
+    """Take the shouting out of the parts of a field that arrived in capitals.
+
+    Filers type into a form and many of them use caps lock. SAGAR KADAKIA and
+    1 LIBERTY STREET read worse than Sagar Kadakia and 1 Liberty Street, and a
+    name in capitals also looks like an acronym.
+
+    Applied per comma-separated SEGMENT, not per field and not per word. A
+    segment is only calmed when it is entirely uppercase, so a real acronym in
+    ordinary text survives: FSH Technologies keeps its FSH because that segment
+    is mixed case, while NEW YORK sitting beside a title-cased street does not,
+    which a whole-field test missed. Within a calmed segment a token holding a
+    digit, a legal suffix or a state code is left alone, so DS1, LLC and NY
+    stay as filed.
+
+    Presentation only, and it happens on export. Supabase keeps what the filing
+    said.
+    """
+    if not value:
+        return value
+    parts = []
+    for seg in value.split(", "):
+        parts.append(seg if any(c.islower() for c in seg) else _calm_words(seg))
+    return ", ".join(parts)
+
+
+def calm_person(entry):
+    """A people entry is 'NAME (Relationship, Relationship)'. Only the name is
+    calmed, so CRISSY BEHRENS (Director) does not keep half its shouting."""
+    if " (" not in entry:
+        return calm(entry)
+    name, rest = entry.split(" (", 1)
+    return calm(name) + " (" + rest
+
+
 def phone(raw):
     """One written format, because five is not a format.
 
@@ -177,16 +241,19 @@ def phone(raw):
     one number match nothing while reporting success. A missed dedupe means
     emailing an existing customer.
 
-    US numbers go out as E.164, which is also what a dialler or Twilio needs.
-    Anything else keeps its digits and gets no country code invented for it:
-    44 7835 097 128 is a real UK number and 757-434-25343 is a typo, and a
-    guessed prefix would corrupt the first to rescue the second.
+    Every value is digits only, country code first, and nothing else. A US
+    number gains its leading 1 so it has the same shape as the rest.
+
+    No plus sign, and that is deliberate rather than untidy. A plus asserts the
+    digits after it are a real country code, which is only knowable for the US
+    ones here: 44 7835 097 128 is a genuine UK number but 757-434-25343 is a
+    typo, and prefixing both would turn the typo into a confident claim about
+    Russia. Digits alone assert nothing, compare exactly, and a dialler can add
+    the plus once a country is known.
     """
     d = re.sub(r"[^0-9]", "", raw or "")
-    if len(d) == 11 and d.startswith("1"):
-        d = d[1:]
     if len(d) == 10:
-        return "+1" + d
+        d = "1" + d
     return d
 
 
@@ -234,18 +301,18 @@ def main():
     for r in rows:
         out.append({
             "cik": text(r["cik"]),
-            "current_name": joined(r["current_name_candidates"]),
-            "former_names": joined(r["former_name_candidates"]),
-            "address_candidates": joined(r["address_candidates"]),
+            "current_name": calm(joined(r["current_name_candidates"])),
+            "former_names": calm(joined(r["former_name_candidates"])),
+            "address_candidates": calm(joined(r["address_candidates"])),
             "phone_candidates": phones(r["phone_candidates"]),
-            "contact_name": text(r["contact_name"]),
-            "people": flat_people(r["people"]),
+            "contact_name": calm(text(r["contact_name"])),
+            "people": SEP.join(calm_person(x) for x in flat_people(r["people"]).split(SEP)),
             "amount_sold": money(r["amount_sold"]),
             "amount_remaining": money(r["amount_remaining"]),
             "industry": text(r["industry"]),
             "prior_formd_count": text(r["prior_formd_count"]),
             "rolled_filing_count": text(r["rolled_filing_count"]),
-            "also_signed_for": joined(r["also_signed_for"]),
+            "also_signed_for": SEP.join(calm(x) for x in joined(r["also_signed_for"]).split(SEP)),
             "filing_date": text(r["filing_date"]),
             "score": text(r["score"]),
         })
@@ -283,13 +350,16 @@ def main():
     if leaked:
         sys.exit("a placeholder leaked into the CSV: %s" % leaked[:5])
 
-    us = sum(1 for r in out for v in r["phone_candidates"].split(SEP)
-             if v.startswith("+1"))
-    other = sum(1 for r in out for v in r["phone_candidates"].split(SEP)
-                if v and not v.startswith("+1"))
+    vals = [v for r in out for v in r["phone_candidates"].split(SEP) if v]
+    us = sum(1 for v in vals if len(v) == 11 and v.startswith("1"))
     say("")
-    say("phones as E.164 (US)                                  : %d" % us)
-    say("phones kept as digits, non-US or malformed            : %d" % other)
+    say("phones, all digits only, country code first           : %d" % len(vals))
+    say("   of those, US (11 digits starting 1)                : %d" % us)
+    say("   non-US or malformed, left exactly as their digits  : %d" % (len(vals) - us))
+    bad = [v for v in vals if not v.isdigit()]
+    say("   containing anything other than a digit             : %d (must be 0)" % len(bad))
+    if bad:
+        sys.exit("a phone reached the CSV with punctuation in it: %s" % bad[:5])
     say("\nfill rate per column:")
     for c in COLUMNS:
         n = sum(1 for r in out if r[c])
