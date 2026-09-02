@@ -39,6 +39,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 25 | 2026-09-03 | Phones leave for Clay in one written format, E.164 for US numbers. Measured: 872 values arrived in five spellings, and the post-Clay dedupe compares phones as strings, so two spellings of one number would match nothing and report success. Non-US numbers keep their digits and get no country code guessed | |
 | 26 | 2026-09-03 | A filing writing `N/A` in a name or phone box means there is no value, and it is dropped rather than shipped. It reached the payload as the phone to chase and as `N/A Lamar Advertising General Partner, LLC` in `people`, because a related person is often an entity and the surname box holds the company | |
 | 27 | 2026-09-03 | The Clay payload is reordered into the order the work is done in, and `also_signed_for` moves beside `contact_name` because it is a fact about the signer. `website_from_edgar` is dropped from the payload: measured empty on all 830, it was 200 blank cells in a table a person reads. The column stays in Supabase | `Kept because it costs nothing and would save a credit if it ever fired` |
+| 28 | 2026-09-03 | `people` excludes whoever is in `contact_name`, matched on first and last name with initials and honorifics dropped, so the two columns never repeat one human. Removed from 675 of 800 rows; 173 rows now have an empty `people`. Columns renamed for the destination: `current_name` singular, measured 799 of 800 single-valued, and `former_names` | |
 
 ---
 
@@ -375,11 +376,11 @@ that confirms an answer, then the facts the copy is built from.
 |---|---|---|---|
 | 1 | `cik` | IDX | Company key |
 | 2 | `score` | Scoring | Decides who is worked first, so it sits where it is read |
-| 3 | `current_name_candidates` | XML entity name + JSON name, deduped to one if identical | Entry 1 to find brand names, website, emails |
-| 4 | `former_name_candidates` | XML issuer previous name + XML EDGAR previous name + JSON former names, deduped | Entry 2. Load-bearing where a legal name is opaque: `CSS Solutions LLC` files under the former name `Charlie Sierra Sierra LLC` |
+| 3 | `current_name` | XML entity name + JSON name, deduped to one if identical | Entry 1 to find brand names, website, emails. **Sent as `current_name`, singular**: measured 799 of 800 carry exactly one value, the sole exception differing only by entity suffix, `Kaleta Labs LLC` against `Kaleta Labs, Inc.` |
+| 4 | `former_names` | XML issuer previous name + XML EDGAR previous name + JSON former names, deduped | Entry 2. Load-bearing where a legal name is opaque: `CSS Solutions LLC` files under the former name `Charlie Sierra Sierra LLC` |
 | 5 | `contact_name` | XML signer plus title. Blank if attorney or authorised person/representative, by the rule below | The person to find, and the strongest evidence that a domain is the right one |
 | 6 | `also_signed_for` | Signer collapse | The other companies this same person signed for. It sits beside `contact_name` because it is a fact about that person, not about this company |
-| 7 | `people` | XML related persons first name + last name + relationship. Multiple if several exist | More humans to find, and to corroborate a domain. Officers may be contacted, directors and promoters never are |
+| 7 | `people` | XML related persons first name + last name + relationship, **excluding whoever is in `contact_name`** | More humans to find, and to corroborate a domain. Officers may be contacted, directors and promoters never are |
 | 8 | `address_candidates` | XML issuer street, city, state, zipcode + JSON street, city, state, country, zipcode. Deduped against `mill_list`. Strip punctuation, expand street types, map state to 2-letter code | **Corroboration only.** Confirms a domain, never disqualifies one |
 | 9 | `phone_candidates` | XML issuer phone number and JSON phone, as E.164 for US numbers. Deduped on `mill_list`. Keep both if different | **Corroboration only**, on the same terms |
 | 10 | `industry` | XML industry group type | |
@@ -393,6 +394,24 @@ that confirms an answer, then the facts the copy is built from.
 it costs nothing and a future pull may find EDGAR populating it, but it is measured empty on **0 of all
 830 scored companies** and shipping 200 blank cells to Clay is noise in a table a person has to read.
 `investorWebsite` is never sent either: it is an investor-relations URL, not the company domain.
+
+**`people` never repeats `contact_name`.** The signer and the related-persons list are separate boxes
+on the form, so the same human is typed differently in each: `Sagar Kadakia` against `SAGAR KADAKIA`,
+`Christopher M. Kane` against `Christopher Michael Kane`, `Sheila Gujrathi, M.D.` against
+`Sheila Gujrathi`. Matching is on **first and last name, lowercased, with honorifics and single-letter
+initials dropped**, which collapses all three pairs. Measured: the contact was removed from 675 of 800
+rows, and 173 rows are left with an empty `people` because the contact was the only human named, which
+is the truth about those filings rather than a loss.
+
+**Two names that share a surname are not merged.** 45 rows still carry someone with the contact's
+surname and nearly all are genuinely different people, because at this stage a co-founder or a spouse
+is common: Petfolk names Audrey and Michael Wystrach, EarthGrid names Troy and Alysia Helming. Fuzzy
+matching would catch the two real duplicates that remain, a typo in `Keven` against `Kevin A. Strauss`
+and a middle-name alias in `Alex Wylie` against `James Alexander Wylie`, and would also merge the
+Wystrachs. The exact rule is kept and the residual is stated.
+
+**The dedupe only applies when the signer is our contact.** Where `contact_name` was blanked as an
+agent, `people` stays complete, because it is then the only place a human is named at all.
 
 **`contact_name` is blanked when the signer is not the company's own officer**, on two tests. The
 filing's `authorizedRepresentative` flag being true blanks it outright, measured on 21 of 1,103

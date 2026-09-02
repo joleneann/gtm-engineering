@@ -74,8 +74,8 @@ JUNK = ("None", "null", "[]", "{}", "N/A", "n/a", "NA", "none",
 COLUMNS = [
     "cik",
     "score",
-    "current_name_candidates",
-    "former_name_candidates",
+    "current_name",
+    "former_names",
     "contact_name",
     "also_signed_for",
     "people",
@@ -234,8 +234,8 @@ def main():
     for r in rows:
         out.append({
             "cik": text(r["cik"]),
-            "current_name_candidates": joined(r["current_name_candidates"]),
-            "former_name_candidates": joined(r["former_name_candidates"]),
+            "current_name": joined(r["current_name_candidates"]),
+            "former_names": joined(r["former_name_candidates"]),
             "address_candidates": joined(r["address_candidates"]),
             "phone_candidates": phones(r["phone_candidates"]),
             "contact_name": text(r["contact_name"]),
@@ -297,7 +297,7 @@ def main():
 
     say("\nfirst 3 rows, people and candidates as Clay will see them:")
     for r in out[:3]:
-        say("   %s  score %s" % (r["current_name_candidates"][:40], r["score"]))
+        say("   %s  score %s" % (r["current_name"][:40], r["score"]))
         say("      contact_name : %s" % (r["contact_name"] or "(blank, agent)"))
         say("      people       : %s" % (r["people"][:100] or "(none)"))
         say("      address      : %s" % (r["address_candidates"][:100] or "(none)"))

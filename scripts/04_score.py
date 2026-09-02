@@ -37,6 +37,7 @@ Usage:
     python scripts/04_score.py
 """
 import os
+import re
 import sys
 import json
 import math
@@ -191,6 +192,26 @@ def score_prior(n):
     return 0.00
 
 
+NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "md", "phd", "mba", "cpa",
+                 "esq", "dr", "mr", "ms", "mrs", "do", "dds", "jd"}
+
+
+def person_key(name):
+    """First and last name, lowercased, for deciding whether two spellings are
+    one human.
+
+    The signer and the related-persons list are separate boxes on the form and
+    the same person is typed differently in each: "Sagar Kadakia" against
+    "SAGAR KADAKIA", "Christopher M. Kane" against "Christopher Michael Kane",
+    "Sheila Gujrathi, M.D." against "Sheila Gujrathi". Middle names, initials
+    and honorifics are dropped so all three pairs collapse to one key."""
+    t = re.sub(r"[^a-z ]", " ", (name or "").lower())
+    parts = [x for x in t.split() if x and x not in NAME_SUFFIXES and len(x) > 1]
+    if not parts:
+        return ""
+    return "%s %s" % (parts[0], parts[-1])
+
+
 def blank_contact(title, authorized_representative):
     """True when the signer is an agent rather than the company's own officer.
 
@@ -278,6 +299,7 @@ def main():
 
     say("\nrolling up and scoring")
     rows, collapsed, blanked, out_of_window = [], 0, 0, 0
+    signer_deduped = people_emptied = 0
 
     for cik, filings in by_cik.items():
         filings.sort(key=lambda r: (r["filing_date"], r["accession_number"]))
@@ -359,14 +381,24 @@ def main():
             signer = (newest["name_of_signer"] or "").strip()
             contact_name = ("%s, %s" % (signer, title)).strip(", ") if signer else None
 
-        people = []
+        # people is everyone EXCEPT the contact, so the two columns never repeat
+        # each other. Only applied when the signer actually is our contact: where
+        # contact_name was blanked as an agent, people stays complete because it
+        # is then the only place a human is named.
+        signer_key = person_key(newest["name_of_signer"]) if contact_name else ""
+        people, dropped_signer = [], 0
         for p in sorted(persons_by_filing.get((newest["accession_number"], cik), []),
                         key=lambda p: p["seq"]):
             parts = [x.strip() for x in (p["first_name"], p["middle_name"], p["last_name"])
                      if x and x.strip().lower() not in JUNK_NAME_PARTS]
-            name = " ".join(parts)
-            people.append({"name": name.strip(),
-                           "relationships": p["relationships"] or []})
+            name = " ".join(parts).strip()
+            if signer_key and person_key(name) == signer_key:
+                dropped_signer += 1
+                continue
+            people.append({"name": name, "relationships": p["relationships"] or []})
+        signer_deduped += 1 if dropped_signer else 0
+        if not people:
+            people_emptied += 1
 
         rows.append({
             "cik": cik,
@@ -397,6 +429,9 @@ def main():
     say("   identical offerings collapsed: %d" % collapsed)
     say("   filings outside the %d-day window: %d" % (WINDOW_DAYS, out_of_window))
     say("   contact_name blanked as an agent: %d" % blanked)
+    say("   rows where the contact was removed from people: %d" % signer_deduped)
+    say("   rows where people is now empty, the contact being the only human: %d"
+        % people_emptied)
 
     written = upsert("outbound_companies_scored", rows, "cik")
     say("\noutbound_companies_scored +%d rows (upsert)" % written)
