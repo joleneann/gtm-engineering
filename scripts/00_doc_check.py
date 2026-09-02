@@ -33,20 +33,43 @@ def withdrawn_phrases(sot_text):
     A changelog row is a markdown table row whose last cell holds the phrase in
     backticks. Rows with an empty last cell record a change that withdrew no
     specific wording, and contribute nothing to check.
+
+    Returns (phrases, malformed). A row that opens with a number but does not
+    split into four cells is MALFORMED, never skipped: a pipe inside a cell,
+    escaped or not, splits the row and silently drops its phrases from
+    enforcement. That happened on changelog 20 and the check reported a clean
+    PASS while enforcing nothing, which is the same class of failure this
+    script exists to prevent.
     """
-    phrases = []
-    for line in sot_text.splitlines():
+    phrases, malformed = [], []
+    lines = sot_text.splitlines()
+
+    # Only the changelog table is parsed strictly. The document holds other
+    # numeric tables, the scoring curves among them, whose rows also open with
+    # a number and are two cells wide by design.
+    start = next((i for i, l in enumerate(lines) if l.strip() == "## Changelog"), None)
+    if start is None:
+        return phrases, [(0, 0, "no '## Changelog' heading found in source_of_truth.md")]
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if lines[i].startswith("## ") or lines[i].strip() == "---":
+            end = i
+            break
+
+    for i in range(start, end):
+        line = lines[i]
         if not line.startswith("|"):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) != 4:
-            continue
         if not re.fullmatch(r"\d+", cells[0]):      # skip header and separator
+            continue
+        if len(cells) != 4:
+            malformed.append((i + 1, len(cells), line.strip()[:90]))
             continue
         last = cells[-1]
         for m in re.findall(r"`([^`]+)`", last):
             phrases.append(m)
-    return phrases
+    return phrases, malformed
 
 
 def live_files():
@@ -65,7 +88,7 @@ def main():
         sys.exit("docs/source_of_truth.md not found. Nothing to check against.")
 
     sot_text = read(SOT)
-    phrases = withdrawn_phrases(sot_text)
+    phrases, malformed = withdrawn_phrases(sot_text)
     files = live_files()
 
     print("no-drift check")
@@ -73,6 +96,17 @@ def main():
     print("  files read in full: %d" % len(files))
     for p in phrases:
         print("     - %s" % p)
+
+    if malformed:
+        print()
+        print("FAIL: %d changelog row(s) do not parse, so their phrases are not enforced"
+              % len(malformed))
+        for ln, n, snippet in malformed:
+            print("  source_of_truth.md:%d  split into %d cells, expected 4" % (ln, n))
+            print("     %s" % snippet)
+        print()
+        print("A cell containing a pipe breaks the row. Rewrite the cell without one.")
+        sys.exit(1)
 
     hits = []
     for path in files:

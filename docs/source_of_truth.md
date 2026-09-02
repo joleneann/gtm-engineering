@@ -31,6 +31,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 17 | 2026-09-02 | The `contact_name` blanking rule is stated rather than assumed: the `authorizedRepresentative` flag, plus an agent vocabulary matched against `signatureTitle`, and a title naming a real office is kept. Measured 246 distinct titles, 20 agent-flavoured across 92 rows, and 21 rows flagged | |
 | 18 | 2026-09-02 | `totalRemaining` is summed across the rolled filings like `totalAmountSold`, because it is an amount and the merge rule takes only non-amount fields from the newest filing | `the amount still left to raise in the round filed` |
 | 19 | 2026-09-02 | Stated where a company already dealt with leaves the pipeline: re-entry on a fresh filing is by design, and customer, held, closed and lost are all removed on the dedupe join against the CRM-populated tables. No new reason codes, because those outcomes cannot fire at this build's volume | |
+| 20 | 2026-09-02 | Four industry codes still carried the PDF's ampersands and could never match a filing: Hospitals, Airlines, Lodging and Tourism. EDGAR full-text search returns 0 Form D documents for each ampersand spelling against 153, 819, 365 and 1,232 for the `and` spelling, and no ampersand appears in any of the 3,571 rows pulled. Evidence in `docs/sources/edgar_industry_enum_spelling_2026-09-02.md`. **No withdrawn phrase**: those spellings are the PDF's own wording and legitimately live in the verbatim capture at `docs/sources/sec_form_d_official_2026-08-29.md`, so a text ban would fail on the evidence archive. The enforcement is the unmapped-code guard in `scripts/04_score.py`, which halts against live data and is what caught this | |
 
 ---
 
@@ -275,7 +276,7 @@ Source: https://www.sec.gov/files/formd.pdf
 | Business Services | Business Services | 2.55 |
 | Health Care | Other Health Care | 2.40 |
 | Health Care | Health Insurance | 2.40 |
-| Health Care | Hospitals & Physicians | 2.40 |
+| Health Care | Hospitals and Physicians | 2.40 |
 | Energy | Other Energy | 2.25 |
 | Energy | Energy Conservation | 2.25 |
 | Energy | Environmental Services | 2.25 |
@@ -291,9 +292,9 @@ Source: https://www.sec.gov/files/formd.pdf
 | Manufacturing | Manufacturing | 0.90 |
 | Agriculture | Agriculture | 0.90 |
 | Restaurants | Restaurants | 0.90 |
-| Travel | Airlines & Airports | 0.60 |
-| Travel | Lodging & Conventions | 0.60 |
-| Travel | Tourism & Travel Services | 0.60 |
+| Travel | Airlines and Airports | 0.60 |
+| Travel | Lodging and Conventions | 0.60 |
+| Travel | Tourism and Travel Services | 0.60 |
 | Travel | Other Travel | 0.60 |
 | Energy | Oil and Gas | 0.30 |
 | Energy | Coal Mining | 0.30 |
@@ -302,9 +303,16 @@ Source: https://www.sec.gov/files/formd.pdf
 | Banking & Financial Services | Investment Banking | 0.30 |
 | Banking & Financial Services | Insurance | 0.30 |
 
-33 codes. The `Code` column is the exact XML enum value, verified against real filings, which is why
-it reads `Oil and Gas` and `REITS and Finance` and `Other Banking and Financial Services` rather than
-the PDF's ampersands. The 34th code on the form, `Other`, is not scored: those companies are parked in
+33 codes. The `Code` column is the exact XML enum value, which is why it reads `Oil and Gas` and
+`REITS and Finance` and `Other Banking and Financial Services` rather than the PDF's ampersands. **No
+code in this table uses an ampersand, and the check is EDGAR's rather than the form's.** Four of these
+codes were seeded from the PDF and could never have matched a filing; `scripts/04_score.py` halted on
+two of them the first time it met real data, which is what the unmapped-code guard exists for. EDGAR
+full-text search over Form D returns **zero** documents for every ampersand spelling and 153, 819, 365
+and 1,232 for the `and` spellings, and no ampersand appears in any of the 3,571 rows pulled. Captured in
+`docs/sources/edgar_industry_enum_spelling_2026-09-02.md`.
+
+The 34th code on the form, `Other`, is not scored: those companies are parked in
 `no_industry_companies`. `Pooled Investment Fund` is routed out before scoring.
 
 3 points to industry, for which I've created a seeded table of Mercury customers by lifetime value,
@@ -319,7 +327,7 @@ reproduced at `docs/industry_clusters.png`:
 |---|---|---|
 | Technology | Other Technology, Computers, Telecommunications | Linear, Supabase, Sprig, Mona |
 | Life Science | Biotechnology, Pharmaceuticals | Freedom Biosciences, TwoStep Therapeutics, Infinimmune |
-| Healthcare Services | Other Health Care, Health Insurance, Hospitals & Physicians | Assort Health, Mochi Health |
+| Healthcare Services | Other Health Care, Health Insurance, Hospitals and Physicians | Assort Health, Mochi Health |
 | Business Services | Business Services | Ways & Means, Acuity, IBEX Consulting |
 | Ecommerce | Retailing | Manta Sleep, Minaal, Raide |
 | Climate | Other Energy, Energy Conservation, Environmental Services, Electric Utilities | Patch, Zeno Power, Renuble |
@@ -376,11 +384,14 @@ surviving filing rows. Otherwise the free-text `signatureTitle` is matched again
 vocabulary: attorney, attorney-in-fact, power of attorney, authorised person, authorised
 representative, authorised signatory, authorised signer, filing agent, registered agent.
 
-**A title that also names a real office keeps its name**, because the agent words appear inside
-genuine officer titles: `chief executive officer, duly authorized` is a CEO, and blanking it would
-throw away exactly the human the payload exists to find. Measured: `signatureTitle` is free text with
-246 distinct values across the surviving rows, of which 20 are agent-flavoured and cover 92 rows.
-Every row carries a signer, so this never fires on a missing name: 0 of 1,103 rows have none.
+**A title that names a real office before any agent wording keeps its name**, because the agent words
+appear inside genuine officer titles: `chief executive officer, duly authorized` is a CEO, and blanking
+it would throw away exactly the human the payload exists to find. **Whichever comes first in the title
+decides**, which is what separates that CEO from `power of attorney for samuel seeton, president`,
+where the office belongs to the person being signed for rather than to the signer. Measured:
+`signatureTitle` is free text with 246 distinct values across the surviving rows, of which 20 are
+agent-flavoured and cover 92 rows. Every row carries a signer, so this never fires on a missing name:
+0 of 1,103 rows have none.
 
 `mill_list` stores addresses and phone numbers of agencies and mills filing on behalf of companies, so
 that the right candidate addresses and phone numbers can be sent to Clay.
