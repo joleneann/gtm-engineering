@@ -23,6 +23,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 9 | 2026-09-02 | `website` from the submissions JSON is sent to Clay. `investorWebsite` is not: it is an investor-relations URL, not the company domain | |
 | 10 | 2026-09-02 | Servicability check moved ahead of the `Other` industry park, so a parked company is already known serviceable | |
 | 11 | 2026-09-02 | Seed rows fixed at 3 existing customers, 2 inbound, 2 test rows on `TEST_EMAIL` / `TEST_PHONE` | |
+| 12 | 2026-09-02 | One company, one row. Where several CIKs share a raise, that raise is counted in full for every CIK; the amount is not split and the run is not halted | |
 
 ---
 
@@ -96,6 +97,13 @@ refactored tomorrow if the scoring system changes, without a refetch of the docu
 Two things inside a filing repeat and cannot be a single column, so they get child tables joined on
 `(accession_number, cik)`: `filing_related_persons` (median 2 people per filing, max 15) and
 `filing_former_names`.
+
+**One company, one row. Where several CIKs share a raise, that raise is counted in full for every
+CIK.** The offering amounts are reported once for the whole filing and are not split between the
+named issuers, so each co-issuer row carries the full `totalAmountSold`. Measured: 7 of 193 filings on
+2026-08-27 name a co-issuer, 0 of 165 on 2026-08-20, and every one is a fund cut into legal vehicles
+(a US and an offshore version of one fund, or a standard and a qualified-purchaser vehicle), so all of
+them are routed out before scoring. An operating company raises as itself.
 
 ### Routing out funds
 
