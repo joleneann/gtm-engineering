@@ -29,6 +29,8 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 15 | 2026-09-02 | `mill_list` membership counts distinct companies, not occurrences. Measured: of 213 values occurring more than three times, 101 are one company's own address or phone, and excluding all 213 would strip both address and phone from 56 of 830 surviving companies | `appearing more than thrice in the data` |
 | 16 | 2026-09-02 | `rolled_filing_count` joins the Clay payload, so a summed amount is never mistaken for a single raise. The column already exists on `outbound_companies_scored`; no schema change | |
 | 17 | 2026-09-02 | The `contact_name` blanking rule is stated rather than assumed: the `authorizedRepresentative` flag, plus an agent vocabulary matched against `signatureTitle`, and a title naming a real office is kept. Measured 246 distinct titles, 20 agent-flavoured across 92 rows, and 21 rows flagged | |
+| 18 | 2026-09-02 | `totalRemaining` is summed across the rolled filings like `totalAmountSold`, because it is an amount and the merge rule takes only non-amount fields from the newest filing | `the amount still left to raise in the round filed` |
+| 19 | 2026-09-02 | Stated where a company already dealt with leaves the pipeline: re-entry on a fresh filing is by design, and customer, held, closed and lost are all removed on the dedupe join against the CRM-populated tables. No new reason codes, because those outcomes cannot fire at this build's volume | |
 
 ---
 
@@ -212,11 +214,23 @@ anchored on the newest filing, before they become a customer, that number is add
 build. Dedupe on the fingerprint of the offering itself (`totalOfferingAmount`, `totalAmountSold`,
 `dateOfFirstSale`, `totalNumberAlreadyInvested`) then add the amounts.
 
-Non-amount fields (industry, contact, related persons, filing date) come from the newest filing.
+Both amounts are added: `totalAmountSold` and `totalRemaining`. Non-amount fields (industry, contact,
+related persons, filing date) come from the newest filing.
+
+**Adding filings up over 12 months never means a company already dealt with is emailed again.** A
+company that files again re-enters the pipeline by design, because a fresh raise is a fresh trigger,
+but whether it is still contactable is settled downstream, not here: the dedupe removes any row whose
+apex domain matches `existing_mercury_customers` or `mercury_inbound`, flagged
+`dupe_existing_customer` or `dupe_inbound` and counted in the funnel. **A company that becomes a
+customer, or is held, closed or lost, is removed on that same join**, because in production those
+tables are CRM-populated and carry every one of those outcomes. In this build they are the seeded
+demo rows, so the held, closed and lost outcomes have no rows to fire on and get no reason code of
+their own: a code that cannot occur at this volume is padding.
 
 This is not an edge case. Measured on 2026-08-27: three CIKs filed more than one Form D that day, and
 they were the large ones, Databricks at $241M and $5.00B. Nonlinear Materials filed five Form Ds on a
-single day in 2025.
+single day in 2025. Measured across the 20-day window: 113 of 830 surviving companies roll up more than
+one filing, the largest being a note-issuing vehicle with 27.
 
 ### Total Remaining, 1 point
 
@@ -235,10 +249,13 @@ points   = 1 - curve(v)
 | 10,000,000 | 0.26 |
 | 50,000,000+ | 0.00 |
 
-One point goes to the amount still left to raise in the round filed, and it exists to catch companies
-in the right industry that declared a large offering and have sold none of it. It also adds
-separation; adding it leaves the model with materially fewer tie groups than amount sold produces on
-its own.
+One point goes to the amount still unsold across every filing rolled into the row, summed the same way
+`totalAmountSold` is, and it exists to catch companies in the right industry that declared a large
+offering and have sold none of it. Remaining is an amount, so it follows the merge rule that amounts
+are added and only non-amount fields come from the newest filing. Reading only the newest filing would
+let a company with $50M unsold across earlier rounds take the full point because its latest small
+filing happened to close, which is the opposite of what the point measures. It also adds separation;
+adding it leaves the model with materially fewer tie groups than amount sold produces on its own.
 
 The assumption is that a company with most of its round closed is closer to making a banking decision.
 It gets one point rather than more because its correlation with amount points is about +0.3 on test
