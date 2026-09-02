@@ -26,6 +26,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 12 | 2026-09-02 | One company, one row. Where several CIKs share a raise, that raise is counted in full for every CIK; the amount is not split and the run is not halted | |
 | 13 | 2026-09-02 | Address gate reads the history JSON first and falls back to the XML filing. Measured: 168 of 2,937 companies have no history address and the filing covers all 168, so no missing-address reason code is created | |
 | 14 | 2026-09-02 | `serviceable_countries` stores EDGAR's own two-character country codes, each looked up against EDGAR's published list rather than inferred | |
+| 15 | 2026-09-02 | `mill_list` membership counts distinct companies, not occurrences. Measured: of 213 values occurring more than three times, 101 are one company's own address or phone, and excluding all 213 would strip both address and phone from 56 of 830 surviving companies | `appearing more than thrice in the data` |
 
 ---
 
@@ -349,9 +350,20 @@ IDX = Filing Index, XML = Filing, JSON = Company History
 | `filing_date` | IDX | |
 | `score` | | |
 
-`mill_list` stores addresses and phone numbers of agencies and mills filing on behalf of companies
-(appearing more than thrice in the data), so that the right candidate addresses and phone numbers can
-be sent to Clay.
+`mill_list` stores addresses and phone numbers of agencies and mills filing on behalf of companies, so
+that the right candidate addresses and phone numbers can be sent to Clay.
+
+**A value is an agency's only when more than three distinct companies use it.** Membership is counted
+on distinct CIK, never on how often the value appears, because those two counts mean opposite things.
+Measured on the 3,571 filing rows: 213 values appear more than three times, but **101 of them belong to
+a single company** filing repeatedly from its own premises, the largest being a head office appearing
+74 times for one CIK. Excluding all 213 would send **56 of the 830 surviving companies** to Clay with
+neither an address nor a phone, removing two of the four entries that resolve a domain. Counting
+distinct companies instead keeps every real agent: one phone shared by 238 companies, a Lynnwood
+address by 194, a Claymont address by 193, a Dover address by 70.
+
+`occurrence_count` is still recorded next to `distinct_cik_count`, because the pair is what separates a
+shared filing agent from a company that simply files often.
 
 ## Enrichment and copy
 

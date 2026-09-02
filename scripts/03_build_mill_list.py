@@ -5,8 +5,14 @@ Step 4: build the mill list.
 Reads every issuer address and phone number in filings_raw (every filing,
 regardless of what 02_route.py did with it: a filing agent files for funds
 too). Normalises each, counts how many filing rows and how many distinct
-CIKs share the normalised value, and writes every value occurring more than
-three times to mill_list.
+CIKs share the normalised value, and writes to mill_list every value shared
+by MORE THAN THREE DISTINCT COMPANIES.
+
+The membership test is distinct companies, never raw occurrences, because the
+two counts mean opposite things. An address recurring 74 times for a single
+CIK is that company's own head office, and an occurrence test put 101 such
+values on a 213-row list, which would have stripped both address and phone
+from 56 of the 830 surviving companies. See the source of truth, changelog 15.
 
 Runs before the Clay payload is built (step 5), because the payload dedupes
 candidate addresses and phones against this list rather than sending an
@@ -36,7 +42,7 @@ import httpx
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BATCH = 500
-THRESHOLD = 3          # more than three occurrences makes the list
+THRESHOLD = 3          # more than three DISTINCT COMPANIES makes the list
 MAX_EXAMPLES = 5
 
 STREET_WORDS = {
@@ -114,6 +120,15 @@ def get_all(table, select, page=1000):
             if len(rows) < page:
                 return out
             off += page
+
+
+def delete_row(table, filters):
+    headers = {"apikey": SB_KEY, "Authorization": "Bearer " + SB_KEY,
+               "Prefer": "return=minimal"}
+    with httpx.Client(timeout=60) as c:
+        r = c.delete("%s/rest/v1/%s" % (SB_URL, table), params=filters, headers=headers)
+        if r.status_code >= 300:
+            sys.exit("delete from %s failed: HTTP %s\n%s" % (table, r.status_code, r.text[:400]))
 
 
 def table_count(table):
@@ -201,7 +216,7 @@ def main():
     rows = []
     for value_type, buckets in agg.items():
         for normalised_value, b in buckets.items():
-            if b["count"] <= THRESHOLD:
+            if len(b["ciks"]) <= THRESHOLD:
                 continue
             rows.append({
                 "value_type": value_type,
@@ -213,10 +228,23 @@ def main():
                 "last_seen": max(b["dates"]) if b["dates"] else None,
             })
 
-    say("\n%d values occur more than %d times and make the list (%d address, %d phone)"
+    say("\n%d values are shared by more than %d distinct companies and make the list "
+        "(%d address, %d phone)"
         % (len(rows), THRESHOLD,
            sum(1 for r in rows if r["value_type"] == "address"),
            sum(1 for r in rows if r["value_type"] == "phone")))
+
+    # Remove anything already in the table that no longer qualifies, so the list
+    # is what the current filings_raw says it is rather than the union of every
+    # rule this script has ever run under. Without this a re-run can only add.
+    want = {(r["value_type"], r["normalised_value"]) for r in rows}
+    held = {(r["value_type"], r["normalised_value"])
+            for r in get_all("mill_list", "value_type,normalised_value")}
+    stale = sorted(held - want)
+    for value_type, normalised_value in stale:
+        delete_row("mill_list", {"value_type": "eq.%s" % value_type,
+                                 "normalised_value": "eq.%s" % normalised_value})
+    say("mill_list -%d rows that no longer qualify" % len(stale))
 
     written = upsert("mill_list", rows, "value_type,normalised_value")
     say("mill_list +%d rows (upsert)" % written)
@@ -227,6 +255,12 @@ def main():
         say("   %-8s %4dx  %3d distinct cik  %-60s %s"
             % (r["value_type"], r["occurrence_count"], r["distinct_cik_count"],
                r["normalised_value"][:60], r["raw_examples"][:2]))
+
+    solo = [r for r in rows if r["distinct_cik_count"] <= THRESHOLD]
+    say("\nrows written that only %d or fewer companies share: %d (must be 0)"
+        % (THRESHOLD, len(solo)))
+    if solo:
+        sys.exit("a value used by %d or fewer companies reached mill_list; fix and re-run" % THRESHOLD)
 
     say("\nelapsed: %.1f min" % ((time.time() - t0) / 60))
     say("cost: $0")

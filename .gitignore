@@ -13,3 +13,9 @@ __pycache__/
 .DS_Store
 archive/
 .venv/
+
+# Planning artefacts. Kept locally so the signed-off plan is never lost again,
+# never committed, and never under docs/ where 00_doc_check.py reads it as a
+# live document: the plan predates decisions the source of truth has since
+# settled, so it legitimately contains withdrawn wording.
+plans/

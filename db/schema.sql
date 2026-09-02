@@ -470,7 +470,11 @@ create index if not exists scored_domain_idx on outbound_companies_scored (domai
 
 
 -- Addresses and phones belonging to filing agents and mills, not companies.
--- Threshold: more than three occurrences in the data.
+-- Threshold: more than three DISTINCT COMPANIES share the value. Counted on
+-- distinct_cik_count, never on occurrence_count: an address recurring 74 times
+-- for one CIK is that company's own head office, and 101 of 213 values passing
+-- an occurrence test were exactly that. Both counts are stored, because the
+-- pair is what separates an agent from a company that simply files often.
 create table if not exists mill_list (
     value_type          text    not null,
     normalised_value    text    not null,
