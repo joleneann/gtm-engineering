@@ -24,6 +24,8 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 10 | 2026-09-02 | Servicability check moved ahead of the `Other` industry park, so a parked company is already known serviceable | |
 | 11 | 2026-09-02 | Seed rows fixed at 3 existing customers, 2 inbound, 2 test rows on `TEST_EMAIL` / `TEST_PHONE` | |
 | 12 | 2026-09-02 | One company, one row. Where several CIKs share a raise, that raise is counted in full for every CIK; the amount is not split and the run is not halted | |
+| 13 | 2026-09-02 | Address gate reads the history JSON first and falls back to the XML filing. Measured: 168 of 2,937 companies have no history address and the filing covers all 168, so no missing-address reason code is created | |
+| 14 | 2026-09-02 | `serviceable_countries` stores EDGAR's own two-character country codes, each looked up against EDGAR's published list rather than inferred | |
 
 ---
 
@@ -131,6 +133,17 @@ or firm filing on the company's behalf.
 
 Failing rows are routed out to the table `likely_unserviceable_companies`, which specifies if they
 failed on jurisdiction or address (`jurisdiction_fail` and/or `address_fail`).
+
+**The address is read from the company history first, and from the filing when the history has none.**
+Measured on the 2,937 companies pulled: 168 have no business address in the history JSON, and the XML
+filing supplies a state or country for **all 168**. So there is no null case and no reason code for a
+missing address, which would be a code that can never fire. The history is preferred because a filing
+address is sometimes the agent's; for those 168 the filing is the only source available, and that
+residual risk is accepted rather than dropping the company.
+
+**EDGAR writes countries as its own two-character codes**, not names: the data contains `E9`, `N4`,
+`A1`, `A6`, `K3` and others. Each code is looked up against EDGAR's published list and the codes
+themselves are stored in `serviceable_countries`. A code is never inferred from context.
 
 ### Parking companies with no scorable industry
 
