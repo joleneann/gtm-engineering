@@ -32,6 +32,8 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 18 | 2026-09-02 | `totalRemaining` is summed across the rolled filings like `totalAmountSold`, because it is an amount and the merge rule takes only non-amount fields from the newest filing | `the amount still left to raise in the round filed` |
 | 19 | 2026-09-02 | Stated where a company already dealt with leaves the pipeline: re-entry on a fresh filing is by design, and customer, held, closed and lost are all removed on the dedupe join against the CRM-populated tables. No new reason codes, because those outcomes cannot fire at this build's volume | |
 | 20 | 2026-09-02 | Four industry codes still carried the PDF's ampersands and could never match a filing: Hospitals, Airlines, Lodging and Tourism. EDGAR full-text search returns 0 Form D documents for each ampersand spelling against 153, 819, 365 and 1,232 for the `and` spelling, and no ampersand appears in any of the 3,571 rows pulled. Evidence in `docs/sources/edgar_industry_enum_spelling_2026-09-02.md`. **No withdrawn phrase**: those spellings are the PDF's own wording and legitimately live in the verbatim capture at `docs/sources/sec_form_d_official_2026-08-29.md`, so a text ban would fail on the evidence archive. The enforcement is the unmapped-code guard in `scripts/04_score.py`, which halts against live data and is what caught this | |
+| 21 | 2026-09-02 | `people` stays JSON in Supabase and is flattened to one plain-text column on export to Clay. Clay receives clean, already-formatted data, and that is decided on formatting rather than on what a credit tier can afford | |
+| 22 | 2026-09-02 | `website_from_edgar` measured across the full scored population instead of a 40-company sample: still 0, now 0 of 830, so Clay resolves every domain itself | `Measured 0/40 on operating companies` |
 
 ---
 
@@ -367,7 +369,7 @@ IDX = Filing Index, XML = Filing, JSON = Company History
 | `former_name_candidates` | XML issuer previous name + XML EDGAR previous name + JSON former names, deduped | Entry 2 to find brand names, website, emails |
 | `address_candidates` | XML issuer street, city, state, zipcode + JSON street, city, state, country, zipcode. Deduped against `mill_list`. Strip punctuation, expand street types, map state to 2-letter code | Entry 3 to find brand names, website, emails |
 | `phone_candidates` | XML issuer phone number and JSON phone. Deduped on `mill_list`. Keep both if different | Entry 4 to find brand names, website, emails |
-| `website_from_edgar` | JSON `website` | Skip domain resolution when EDGAR already has one. Measured 0/40 on operating companies, so usually null, but free when it fires. `investorWebsite` is never sent: it is an investor-relations URL, not the company domain |
+| `website_from_edgar` | JSON `website` | Skip domain resolution when EDGAR already has one. Measured **0 of all 830 scored companies**, up from a 40-company sample, so it is empty in practice and Clay resolves every domain itself. Kept because it costs nothing and would save a credit if it ever fired. `investorWebsite` is never sent: it is an investor-relations URL, not the company domain |
 | `contact_name` | XML signer plus title. Blank if attorney or authorised person/representative, by the rule below | To find the contact person |
 | `people` | XML related persons first name + last name + relationship. Multiple if several exist | To find the contact person + related persons |
 | `amount_sold` | XML | |
@@ -392,6 +394,15 @@ where the office belongs to the person being signed for rather than to the signe
 `signatureTitle` is free text with 246 distinct values across the surviving rows, of which 20 are
 agent-flavoured and cover 92 rows. Every row carries a signer, so this never fires on a missing name:
 0 of 1,103 rows have none.
+
+**`people` is stored as JSON and sent to Clay as one plain-text column.** Supabase keeps it structured
+because the truth layer is SQL and a question like how many companies name a CFO on the filing is a
+query against structure, not a substring hunt through a sentence. Clay is a different consumer: it
+receives a CSV, a JSON blob in a cell would have to be parsed inside a Clay formula, and no column
+Clay runs an action on should need unpacking first. So the export flattens it to
+`Jane Doe (Executive Officer); John Roe (Director, Promoter)`, one row per company, and the primary
+target continues to travel separately as `contact_name`, already a plain string. **The rule is that
+Clay receives clean, already-formatted data**, and it does not bend for what a credit tier can afford.
 
 `mill_list` stores addresses and phone numbers of agencies and mills filing on behalf of companies, so
 that the right candidate addresses and phone numbers can be sent to Clay.
