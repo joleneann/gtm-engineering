@@ -41,7 +41,8 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 27 | 2026-09-03 | The Clay payload is reordered into the order the work is done in, and `also_signed_for` moves beside `contact_name` because it is a fact about the signer. `website_from_edgar` is dropped from the payload: measured empty on all 830, it was 200 blank cells in a table a person reads. The column stays in Supabase | `Kept because it costs nothing and would save a credit if it ever fired` |
 | 28 | 2026-09-03 | `people` excludes whoever is in `contact_name`, matched on first and last name with initials and honorifics dropped, so the two columns never repeat one human. Removed from 675 of 800 rows; 173 rows now have an empty `people`. Columns renamed for the destination: `current_name` singular, measured 799 of 800 single-valued, and `former_names` | |
 | 29 | 2026-09-03 | Phones ship as digits only with the country code first and no plus sign, because a plus asserts a country code we can only verify for US numbers and would turn the one malformed value into a confident claim about the wrong country | `E.164 for US numbers` |
-| 30 | 2026-09-03 | Block capitals are calmed on export, per comma-separated segment so acronyms inside mixed-case text survive. Measured: 20 fields keep a capitalised word and every one is a genuine acronym | |
+| 30 | 2026-09-03 | Block capitals are calmed per comma-separated segment, so acronyms inside mixed-case text survive. Measured: 20 fields keep a capitalised word and every one is a genuine acronym | |
+| 31 | 2026-09-03 | Calming and phone formatting move from the export into `04_score.py`, so the payload table holds them and every consumer inherits them. n8n reads that table rather than the CSV, and the phone dedupe joins on it. Measured: 0 of 830 addresses left in capitals, against 662 before. Job-title acronyms added to the keep-uppercase list after 98 contacts read `Ceo` | `Block capitals are calmed on export` |
 
 ---
 
@@ -450,14 +451,22 @@ confident claim about Russia. Digits alone assert nothing, compare exactly, and 
 plus once a country is established. Measured on the export: 854 values, 842 US, 12 non-US or
 malformed and left exactly as their digits.
 
-**Block capitals are calmed on export.** Many filers type in caps lock, and `SAGAR KADAKIA` and
+**Block capitals are calmed when the payload row is built.** Many filers type in caps lock, and `SAGAR KADAKIA` and
 `1 LIBERTY STREET` read worse than `Sagar Kadakia` and `1 Liberty Street`, besides making a name look
 like an acronym. This is applied per comma-separated **segment**, never per field or per word, so a
 real acronym inside ordinary text survives: `FSH Technologies`, `EXUMA Biotech` and `AURA Network
 Systems` keep their capitals because those segments are mixed case, while `NEW YORK` sitting beside a
 title-cased street does not. Within a calmed segment, a token holding a digit, a legal suffix or a
-state code is left alone, so `DS1`, `LLC` and `NY` stay as filed. It is presentation only: Supabase
-keeps what the filing said.
+state code is left alone, so `DS1`, `LLC` and `NY` stay as filed, along with the job-title acronyms:
+without `CEO` on that list, 98 contacts read `Ceo`.
+
+**Both this and the phone format are applied in `04_score.py`, not on export, so every consumer
+inherits them.** n8n reads `outbound_companies_scored` rather than the CSV, and outbound facts are
+substituted straight from the row, so a value left shouting in the table would be shouted in the email
+and written into the CRM. The phone case is stronger still: the dedupe after Clay compares phones as
+strings against the customer tables, so a raw phone stored here would fail that join silently.
+`filings_raw` keeps the filing's own text untouched, so provenance survives one table down and nothing
+is lost. Measured after the move: 0 of 830 addresses remain in block capitals, against 662 before.
 
 **`people` is stored as JSON and sent to Clay as one plain-text column.** Supabase keeps it structured
 because the truth layer is SQL and a question like how many companies name a CFO on the filing is a

@@ -192,6 +192,81 @@ def score_prior(n):
     return 0.00
 
 
+# Tokens that stay in capitals when a shouted segment is calmed: legal suffixes,
+# state codes, address scraps, and the job-title acronyms. CEO belongs here and
+# its absence turned 98 contacts into "Ceo" before this list was checked against
+# the data. Anything containing a digit is left exactly as filed, so DS1 stays
+# DS1 rather than becoming Ds1.
+KEEP_UPPER = {
+    "LLC", "L.L.C.", "LLP", "LP", "L.P.", "PLLC", "INC", "INC.", "CORP", "CORP.",
+    "PBC", "PC", "CO", "CO.", "LTD", "LTD.", "GP", "SPV", "REIT", "USA", "US",
+    "UK", "AI", "IT", "HQ", "PO", "II", "III", "IV", "V", "VI",
+    "CEO", "CFO", "COO", "CTO", "CIO", "CMO", "CRO", "CSO", "CPO", "CLO",
+    "CAO", "CCO", "EVP", "SVP", "AVP", "VP", "GC", "MD", "JD", "PHD", "ESQ",
+    "N", "S", "E", "W", "NE", "NW", "SE", "SW",
+    "AL", "AK", "AZ", "AR", "CA", "CT", "DC", "DE", "FL", "GA", "HI", "IA",
+    "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME", "MI", "MN", "MO",
+    "MS", "MT", "NC", "ND", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR",
+    "PA", "PR", "RI", "SC", "SD", "TN", "TX", "UT", "VA", "VT", "WA", "WI",
+    "WV", "WY",
+}
+
+
+def _calm_words(seg):
+    out = []
+    for tok in seg.split(" "):
+        bare = tok.strip(",.()")
+        if not bare or any(c.isdigit() for c in bare) or bare.upper() in KEEP_UPPER:
+            out.append(tok)
+        elif "-" in tok:
+            out.append("-".join(w.capitalize() for w in tok.split("-")))
+        else:
+            out.append(tok.capitalize())
+    return " ".join(out)
+
+
+def calm(value):
+    """Take the shouting out of the parts of a value that arrived in capitals.
+
+    Many filers type in caps lock. SAGAR KADAKIA and 1 LIBERTY STREET read worse
+    than Sagar Kadakia and 1 Liberty Street, and a name in capitals also looks
+    like an acronym.
+
+    Applied per comma-separated SEGMENT, never per field and never per word. A
+    whole-field test leaves NEW YORK shouting beside a title-cased street; a
+    per-word test turns FSH Technologies into Fsh. Per segment, a real acronym
+    inside ordinary text survives because its segment is mixed case, and a
+    wholly shouted segment is calmed word by word against KEEP_UPPER.
+
+    This runs here rather than at export so every consumer inherits it: n8n
+    reads this table, not the CSV, and the copy substitutes these fields
+    directly. filings_raw keeps the filing's own text, so nothing is lost.
+    """
+    if not value:
+        return value
+    return ", ".join(seg if any(c.islower() for c in seg) else _calm_words(seg)
+                     for seg in value.split(", "))
+
+
+def phone_digits(raw):
+    """Digits only, country code first, no plus.
+
+    The dedupe after Clay compares phones as strings against the customer
+    tables, so one written format is not cosmetic: two spellings of one number
+    match nothing and report success. A US number gains its leading 1 to match
+    the shape of the rest.
+
+    No plus, because a plus asserts the digits after it are a real country code
+    and that is only knowable for the US ones. 44 7835 097 128 is a genuine UK
+    number and 757-434-25343 is a typo, and prefixing both would turn the typo
+    into a confident claim about the wrong country.
+    """
+    d = re.sub(r"[^0-9]", "", raw or "")
+    if len(d) == 10:
+        d = "1" + d
+    return d
+
+
 NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "md", "phd", "mba", "cpa",
                  "esq", "dr", "mr", "ms", "mrs", "do", "dds", "jd"}
 
@@ -337,13 +412,13 @@ def main():
         total = round(s_amount + s_remaining + s_industry + s_prior, 2)
 
         # ---- Clay payload
-        names = dedupe_keep_order([newest["company_name"], e.get("entity_name")])
+        names = [calm(x) for x in dedupe_keep_order([newest["company_name"], e.get("entity_name")])]
 
         former_names = list(former_by_cik.get(cik, []))
         for fn in (e.get("former_names") or []):
             if isinstance(fn, dict) and fn.get("name"):
                 former_names.append(fn["name"])
-        former_names = dedupe_keep_order(former_names)
+        former_names = [calm(x) for x in dedupe_keep_order(former_names)]
 
         addr_candidates = []
         for parts in ((newest["issuer_street1"], newest["issuer_street2"], newest["issuer_city"],
@@ -356,7 +431,7 @@ def main():
             if normalise_address(*parts) in mill_addr:
                 continue
             addr_candidates.append(readable)
-        addr_candidates = dedupe_keep_order(addr_candidates)
+        addr_candidates = [calm(x) for x in dedupe_keep_order(addr_candidates)]
 
         phone_candidates = []
         for raw in (newest["issuer_phone"], e.get("phone")):
@@ -370,7 +445,7 @@ def main():
                 continue
             if digits in mill_phone:
                 continue
-            phone_candidates.append(raw)
+            phone_candidates.append(phone_digits(raw))
         phone_candidates = dedupe_keep_order(phone_candidates)
 
         if blank_contact(newest["signature_title"], newest["authorized_representative"]):
@@ -379,7 +454,7 @@ def main():
         else:
             title = (newest["signature_title"] or "").strip()
             signer = (newest["name_of_signer"] or "").strip()
-            contact_name = ("%s, %s" % (signer, title)).strip(", ") if signer else None
+            contact_name = calm(("%s, %s" % (signer, title)).strip(", ")) if signer else None
 
         # people is everyone EXCEPT the contact, so the two columns never repeat
         # each other. Only applied when the signer actually is our contact: where
@@ -395,7 +470,7 @@ def main():
             if signer_key and person_key(name) == signer_key:
                 dropped_signer += 1
                 continue
-            people.append({"name": name, "relationships": p["relationships"] or []})
+            people.append({"name": calm(name), "relationships": p["relationships"] or []})
         signer_deduped += 1 if dropped_signer else 0
         if not people:
             people_emptied += 1
