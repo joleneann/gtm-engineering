@@ -10,7 +10,9 @@ column.
 Columns are the payload named in the source of truth, in that order, plus
 rolled_filing_count (changelog 16) so a summed amount is never read as a
 single raise, and also_signed_for (changelog 23) naming the other companies
-the same person signed for.
+the same person signed for, which sits beside contact_name because it is a
+fact about that person. website_from_edgar is not exported: it is empty on all
+830 scored companies (changelog 27).
 
 ONLY ROWS THAT SURVIVED THE SIGNER COLLAPSE ARE EXPORTED. A row marked
 dupe_same_signer is one of 19 Imagen entities signed by the same human, and
@@ -62,23 +64,29 @@ SEP = "; "
 JUNK = ("None", "null", "[]", "{}", "N/A", "n/a", "NA", "none",
         "unknown", "Unknown", "TBD", "-")
 
+# The order the work is done in, because a person reads these left to right in a
+# Clay table: the key and the priority, then who and what to search for, then the
+# evidence that confirms an answer, then the facts the copy is built from.
+# also_signed_for sits beside contact_name because it is a fact about that
+# person, not about this company.
+# website_from_edgar is deliberately absent: measured empty on all 830 scored
+# companies, so it was 200 blank cells. The column stays in Supabase.
 COLUMNS = [
     "cik",
+    "score",
     "current_name_candidates",
     "former_name_candidates",
+    "contact_name",
+    "also_signed_for",
+    "people",
     "address_candidates",
     "phone_candidates",
-    "website",
-    "contact_name",
-    "people",
+    "industry",
     "amount_sold",
     "amount_remaining",
-    "industry",
-    "prior_formd_count",
     "rolled_filing_count",
-    "also_signed_for",
+    "prior_formd_count",
     "filing_date",
-    "score",
 ]
 
 
@@ -230,7 +238,6 @@ def main():
             "former_name_candidates": joined(r["former_name_candidates"]),
             "address_candidates": joined(r["address_candidates"]),
             "phone_candidates": phones(r["phone_candidates"]),
-            "website": text(r["website_from_edgar"]),
             "contact_name": text(r["contact_name"]),
             "people": flat_people(r["people"]),
             "amount_sold": money(r["amount_sold"]),

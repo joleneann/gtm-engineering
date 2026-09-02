@@ -38,6 +38,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 24 | 2026-09-02 | Every address written to is recorded in `contacted_emails` and checked when Clay returns, so a person reached once is never reached again. New code `dupe_already_emailed` | |
 | 25 | 2026-09-03 | Phones leave for Clay in one written format, E.164 for US numbers. Measured: 872 values arrived in five spellings, and the post-Clay dedupe compares phones as strings, so two spellings of one number would match nothing and report success. Non-US numbers keep their digits and get no country code guessed | |
 | 26 | 2026-09-03 | A filing writing `N/A` in a name or phone box means there is no value, and it is dropped rather than shipped. It reached the payload as the phone to chase and as `N/A Lamar Advertising General Partner, LLC` in `people`, because a related person is often an entity and the surname box holds the company | |
+| 27 | 2026-09-03 | The Clay payload is reordered into the order the work is done in, and `also_signed_for` moves beside `contact_name` because it is a fact about the signer. `website_from_edgar` is dropped from the payload: measured empty on all 830, it was 200 blank cells in a table a person reads. The column stays in Supabase | `Kept because it costs nothing and would save a credit if it ever fired` |
 
 ---
 
@@ -366,23 +367,32 @@ final score, and the following parameters, ready to be sent to Clay for enrichme
 
 IDX = Filing Index, XML = Filing, JSON = Company History
 
-| Clay Row Name | Source | Purpose |
-|---|---|---|
-| `cik` | IDX | Company key |
-| `current_name_candidates` | XML entity name + JSON name, deduped to one if identical | Entry 1 to find brand names, website, emails |
-| `former_name_candidates` | XML issuer previous name + XML EDGAR previous name + JSON former names, deduped | Entry 2 to find brand names, website, emails |
-| `address_candidates` | XML issuer street, city, state, zipcode + JSON street, city, state, country, zipcode. Deduped against `mill_list`. Strip punctuation, expand street types, map state to 2-letter code | Entry 3 to find brand names, website, emails |
-| `phone_candidates` | XML issuer phone number and JSON phone. Deduped on `mill_list`. Keep both if different | Entry 4 to find brand names, website, emails |
-| `website_from_edgar` | JSON `website` | Skip domain resolution when EDGAR already has one. Measured **0 of all 830 scored companies**, up from a 40-company sample, so it is empty in practice and Clay resolves every domain itself. Kept because it costs nothing and would save a credit if it ever fired. `investorWebsite` is never sent: it is an investor-relations URL, not the company domain |
-| `contact_name` | XML signer plus title. Blank if attorney or authorised person/representative, by the rule below | To find the contact person |
-| `people` | XML related persons first name + last name + relationship. Multiple if several exist | To find the contact person + related persons |
-| `amount_sold` | XML | |
-| `amount_remaining` | XML | |
-| `industry` | XML industry group type | |
-| `prior_formd_count` | JSON recent Form D filings counted | |
-| `rolled_filing_count` | Rollup | **How many Form D filings were added together to produce `amount_sold`.** 1 for most companies. Measured: 113 of 830 roll up more than one filing, and the largest is a note-issuing vehicle with 27 in twelve months. Without it, a summed figure is indistinguishable from a single raise, and copy generated from the row could describe twenty-seven issuances as one round |
-| `filing_date` | IDX | |
-| `score` | | |
+**The column order is the order the work is done in**, because these columns are read left to right by
+a person in a Clay table: the key and the priority, then who and what to search for, then the evidence
+that confirms an answer, then the facts the copy is built from.
+
+| # | Clay Row Name | Source | Purpose |
+|---|---|---|---|
+| 1 | `cik` | IDX | Company key |
+| 2 | `score` | Scoring | Decides who is worked first, so it sits where it is read |
+| 3 | `current_name_candidates` | XML entity name + JSON name, deduped to one if identical | Entry 1 to find brand names, website, emails |
+| 4 | `former_name_candidates` | XML issuer previous name + XML EDGAR previous name + JSON former names, deduped | Entry 2. Load-bearing where a legal name is opaque: `CSS Solutions LLC` files under the former name `Charlie Sierra Sierra LLC` |
+| 5 | `contact_name` | XML signer plus title. Blank if attorney or authorised person/representative, by the rule below | The person to find, and the strongest evidence that a domain is the right one |
+| 6 | `also_signed_for` | Signer collapse | The other companies this same person signed for. It sits beside `contact_name` because it is a fact about that person, not about this company |
+| 7 | `people` | XML related persons first name + last name + relationship. Multiple if several exist | More humans to find, and to corroborate a domain. Officers may be contacted, directors and promoters never are |
+| 8 | `address_candidates` | XML issuer street, city, state, zipcode + JSON street, city, state, country, zipcode. Deduped against `mill_list`. Strip punctuation, expand street types, map state to 2-letter code | **Corroboration only.** Confirms a domain, never disqualifies one |
+| 9 | `phone_candidates` | XML issuer phone number and JSON phone, as E.164 for US numbers. Deduped on `mill_list`. Keep both if different | **Corroboration only**, on the same terms |
+| 10 | `industry` | XML industry group type | |
+| 11 | `amount_sold` | XML | |
+| 12 | `amount_remaining` | XML | |
+| 13 | `rolled_filing_count` | Rollup | **How many Form D filings were added together to produce `amount_sold`.** 1 for most companies. Measured: 113 of 830 roll up more than one filing, and the largest is a note-issuing vehicle with 27 in twelve months. Without it, a summed figure is indistinguishable from a single raise, and copy generated from the row could describe twenty-seven issuances as one round |
+| 14 | `prior_formd_count` | JSON recent Form D filings counted | |
+| 15 | `filing_date` | IDX | |
+
+**`website_from_edgar` is not sent.** The column stays on `outbound_companies_scored`, because storing
+it costs nothing and a future pull may find EDGAR populating it, but it is measured empty on **0 of all
+830 scored companies** and shipping 200 blank cells to Clay is noise in a table a person has to read.
+`investorWebsite` is never sent either: it is an investor-relations URL, not the company domain.
 
 **`contact_name` is blanked when the signer is not the company's own officer**, on two tests. The
 filing's `authorizedRepresentative` flag being true blanks it outright, measured on 21 of 1,103
