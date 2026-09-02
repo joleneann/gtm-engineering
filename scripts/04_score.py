@@ -73,6 +73,12 @@ AGENT_PHRASES = (
     "filing agent", "registered agent", "authorized agent",
     "representative",
 )
+# What a filer writes in a name box to mean "there isn't one". A related person
+# is often an entity rather than a human, so the first and middle name boxes get
+# N/A and the company goes in the surname box. Joined naively that produces
+# "N/A Lamar Advertising General Partner, LLC" and "Andrew n/a Millard".
+JUNK_NAME_PARTS = {"n/a", "n.a.", "na", "none", "null", "nil", "-", "--", "."}
+
 OFFICE_WORDS = (
     "chief executive", "ceo", "chief financial", "cfo", "chief operating",
     "coo", "chief technology", "cto", "president", "chairman", "chairperson",
@@ -334,7 +340,13 @@ def main():
         for raw in (newest["issuer_phone"], e.get("phone")):
             if not raw:
                 continue
-            if normalise_phone(raw) in mill_phone:
+            digits = normalise_phone(raw)
+            # A filing that says "N/A" in the phone box is not a phone. Anything
+            # that cannot hold a subscriber number is dropped here rather than
+            # shipped to Clay as a candidate to chase.
+            if not digits or len(digits) < 7:
+                continue
+            if digits in mill_phone:
                 continue
             phone_candidates.append(raw)
         phone_candidates = dedupe_keep_order(phone_candidates)
@@ -350,7 +362,9 @@ def main():
         people = []
         for p in sorted(persons_by_filing.get((newest["accession_number"], cik), []),
                         key=lambda p: p["seq"]):
-            name = " ".join(x for x in (p["first_name"], p["middle_name"], p["last_name"]) if x)
+            parts = [x.strip() for x in (p["first_name"], p["middle_name"], p["last_name"])
+                     if x and x.strip().lower() not in JUNK_NAME_PARTS]
+            name = " ".join(parts)
             people.append({"name": name.strip(),
                            "relationships": p["relationships"] or []})
 

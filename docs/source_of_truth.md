@@ -36,6 +36,8 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 22 | 2026-09-02 | `website_from_edgar` measured across the full scored population instead of a 40-company sample: still 0, now 0 of 830, so Clay resolves every domain itself | `Measured 0/40 on operating companies` |
 | 23 | 2026-09-02 | One human signing for more than three companies is collapsed to the highest-scoring one before Clay, the rest kept and pointed at it. Measured: 4 signers over 34 companies naming 7 humans between them, so per-company sending would be 60 emails to 7 people. New table `signer_list`, new code `dupe_same_signer` | |
 | 24 | 2026-09-02 | Every address written to is recorded in `contacted_emails` and checked when Clay returns, so a person reached once is never reached again. New code `dupe_already_emailed` | |
+| 25 | 2026-09-03 | Phones leave for Clay in one written format, E.164 for US numbers. Measured: 872 values arrived in five spellings, and the post-Clay dedupe compares phones as strings, so two spellings of one number would match nothing and report success. Non-US numbers keep their digits and get no country code guessed | |
+| 26 | 2026-09-03 | A filing writing `N/A` in a name or phone box means there is no value, and it is dropped rather than shipped. It reached the payload as the phone to chase and as `N/A Lamar Advertising General Partner, LLC` in `people`, because a related person is often an entity and the surname box holds the company | |
 
 ---
 
@@ -396,6 +398,20 @@ where the office belongs to the person being signed for rather than to the signe
 `signatureTitle` is free text with 246 distinct values across the surviving rows, of which 20 are
 agent-flavoured and cover 92 rows. Every row carries a signer, so this never fires on a missing name:
 0 of 1,103 rows have none.
+
+**A value a filing uses to mean nothing is dropped, never shipped.** `N/A` in the phone box is not a
+phone, and a related person is frequently an entity rather than a human, so the first and middle name
+boxes carry `N/A` and the surname box carries the company. Joined naively that reaches Clay as
+`N/A Lamar Advertising General Partner, LLC` and as `Andrew n/a Millard`. Both are cleaned where the
+candidate is built, not on the way out, so the payload table itself is clean.
+
+**Phones leave in one written format: E.164 for US numbers.** Measured: 872 phone values arrived in
+five spellings of the same thing, `650-549-1400`, `(650) 549-1400`, `6505491400`, `650.549.1400` and
+worse. Claygent reads them alike, but the dedupe after Clay compares phones as strings, and two
+spellings of one number match nothing while reporting success, which means emailing a customer we
+already have. **No country code is ever guessed**: `44 7835 097 128` is a real UK number and
+`757-434-25343` is a typo, so anything that is not a recognisable US number keeps its digits untouched.
+Measured on the export: 842 US, 12 non-US or malformed.
 
 **`people` is stored as JSON and sent to Clay as one plain-text column.** Supabase keeps it structured
 because the truth layer is SQL and a question like how many companies name a CFO on the filing is a

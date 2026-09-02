@@ -43,6 +43,7 @@ Usage:
     python scripts/05_export_clay_csv.py
 """
 import os
+import re
 import csv
 import sys
 import json
@@ -55,6 +56,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORTS = os.path.join(ROOT, "exports")
 CLAY_FREE_ROWS = 200
 SEP = "; "
+
+# Values a filing puts in a box to mean 'nothing'. They are not data and must
+# never reach Clay as something to chase.
+JUNK = ("None", "null", "[]", "{}", "N/A", "n/a", "NA", "none",
+        "unknown", "Unknown", "TBD", "-")
 
 COLUMNS = [
     "cik",
@@ -154,6 +160,38 @@ def flat_people(people):
     return SEP.join(out)
 
 
+def phone(raw):
+    """One written format, because five is not a format.
+
+    The filings carry one number five ways: 650-549-1400, (650) 549-1400,
+    6505491400, 650.549.1400 and worse. Claygent reads them all alike, but
+    the post-Clay dedupe compares phones as strings, and two spellings of
+    one number match nothing while reporting success. A missed dedupe means
+    emailing an existing customer.
+
+    US numbers go out as E.164, which is also what a dialler or Twilio needs.
+    Anything else keeps its digits and gets no country code invented for it:
+    44 7835 097 128 is a real UK number and 757-434-25343 is a typo, and a
+    guessed prefix would corrupt the first to rescue the second.
+    """
+    d = re.sub(r"[^0-9]", "", raw or "")
+    if len(d) == 11 and d.startswith("1"):
+        d = d[1:]
+    if len(d) == 10:
+        return "+1" + d
+    return d
+
+
+def phones(values):
+    out, seen = [], set()
+    for v in values or []:
+        f = phone(v)
+        if f and f not in seen:
+            seen.add(f)
+            out.append(f)
+    return SEP.join(out)
+
+
 def money(v):
     """Plain number, no symbol and no thousands separator, so a Clay formula can
     add it without stripping anything first."""
@@ -191,7 +229,7 @@ def main():
             "current_name_candidates": joined(r["current_name_candidates"]),
             "former_name_candidates": joined(r["former_name_candidates"]),
             "address_candidates": joined(r["address_candidates"]),
-            "phone_candidates": joined(r["phone_candidates"]),
+            "phone_candidates": phones(r["phone_candidates"]),
             "website": text(r["website_from_edgar"]),
             "contact_name": text(r["contact_name"]),
             "people": flat_people(r["people"]),
@@ -233,11 +271,18 @@ def main():
         sys.exit("a cell reached the CSV as something other than text: %s" % bad_type[:5])
 
     leaked = [(r["cik"], k) for r in out for k, v in r.items()
-              if v in ("None", "null", "[]", "{}")]
+              if v in JUNK]
     say("cells holding a literal None/null/[]/{}: %d (must be 0)" % len(leaked))
     if leaked:
         sys.exit("a placeholder leaked into the CSV: %s" % leaked[:5])
 
+    us = sum(1 for r in out for v in r["phone_candidates"].split(SEP)
+             if v.startswith("+1"))
+    other = sum(1 for r in out for v in r["phone_candidates"].split(SEP)
+                if v and not v.startswith("+1"))
+    say("")
+    say("phones as E.164 (US)                                  : %d" % us)
+    say("phones kept as digits, non-US or malformed            : %d" % other)
     say("\nfill rate per column:")
     for c in COLUMNS:
         n = sum(1 for r in out if r[c])
