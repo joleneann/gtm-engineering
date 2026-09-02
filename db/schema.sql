@@ -450,6 +450,15 @@ create table if not exists outbound_companies_scored (
     dedupe_matched_on       text,
     dedupe_matched_id       bigint,
 
+    -- Signer collapse: one desk gets one email. Where one human signs for more
+    -- than three companies, the highest scoring is contacted and the rest are
+    -- marked dupe_same_signer, kept in place, and point at the one we kept.
+    -- also_signed_for carries the sibling company names onto the kept row, so
+    -- nothing is lost and the copy knows it is writing to someone running
+    -- several entities.
+    collapsed_into_cik      bigint,
+    also_signed_for         text[],
+
     is_test_row             boolean not null default false,
     scored_at               timestamptz not null default now(),
 
@@ -460,7 +469,8 @@ create table if not exists outbound_companies_scored (
                                      'enrich_no_domain', 'enrich_no_work_email')),
     constraint scored_dedupe_status_chk
         check (dedupe_status in ('pending', 'unique',
-                                 'dupe_existing_customer', 'dupe_inbound')),
+                                 'dupe_existing_customer', 'dupe_inbound',
+                                 'dupe_same_signer', 'dupe_already_emailed')),
     constraint scored_dedupe_matched_on_chk
         check (dedupe_matched_on is null or dedupe_matched_on in ('domain', 'phone'))
 );
@@ -487,6 +497,27 @@ create table if not exists mill_list (
 
     constraint mill_list_pk primary key (value_type, normalised_value),
     constraint mill_list_value_type_chk check (value_type in ('address', 'phone'))
+);
+
+
+-- Humans who sign Form D for several companies. Built exactly like mill_list
+-- and for the same reason: a shared value is evidence of one desk behind many
+-- names. It is a TABLE rather than a per-run check because a signer who
+-- appears four times this month will appear again in March, and the rule has
+-- to catch him on the next pull as well as this one.
+-- Threshold: more than three distinct companies. Up to three is allowed
+-- through deliberately, and the already-emailed check downstream is what stops
+-- those resolving to one address and being written to three times.
+-- The name is normalised before counting, because 'Tadd M. Miller' and
+-- 'Tadd Miller' are one human filed two ways and would otherwise count twice.
+create table if not exists signer_list (
+    normalised_signer   text     primary key,
+    raw_examples        text[],
+    company_count       integer  not null,
+    company_ciks        bigint[],
+    first_seen          date,
+    last_seen           date,
+    updated_at          timestamptz not null default now()
 );
 
 
@@ -526,6 +557,26 @@ create table if not exists mercury_inbound (
 
 create unique index if not exists mercury_inbound_domain_idx
     on mercury_inbound (lower(domain));
+
+
+-- Every address ever written to. Keyed on the address rather than the company,
+-- because the thing being protected is a person's inbox and it has to outlive
+-- the run, the company and the campaign. Checked after Clay returns, alongside
+-- the existing-customer and inbound joins, so a person reached once is never
+-- reached again even if a second company of theirs clears every earlier gate.
+-- is_demo_seed marks rows added to prove the check fires; they are excluded
+-- from reported counts. Nothing real is ever written here in this build,
+-- because only seeded test rows are sendable.
+create table if not exists contacted_emails (
+    email_normalised    text     primary key,
+    cik                 bigint,
+    company_name        text,
+    first_contacted_at  timestamptz not null default now(),
+    last_contacted_at   timestamptz not null default now(),
+    times_contacted     integer  not null default 1,
+    source              text     not null default 'outbound',
+    is_demo_seed        boolean  not null default false
+);
 
 
 -- ---------------------------------------------------------------------
@@ -676,7 +727,13 @@ insert into reason_codes (code, stage, exits_to_table, description, measured_rat
   'guaranteed by the 3 seeded customers', 8),
  ('dupe_inbound',                 'dedupe', null,
   'Apex domain matches a company that already came in through inbound.',
-  'guaranteed by the 2 seeded inbound rows', 9)
+  'guaranteed by the 2 seeded inbound rows', 9),
+ ('dupe_same_signer',             'dedupe', null,
+  'One human signs Form D for more than three companies. The highest scoring is contacted, the rest are kept and point at it.',
+  '30 of 830 companies, across 4 signers', 10),
+ ('dupe_already_emailed',         'dedupe', null,
+  'The resolved work email is already in contacted_emails, so this person has been written to before.',
+  'unmeasured until Clay returns addresses and the demo seed is added', 11)
 on conflict (code) do update
    set stage = excluded.stage,
        exits_to_table = excluded.exits_to_table,

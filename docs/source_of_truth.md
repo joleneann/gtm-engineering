@@ -34,6 +34,8 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 20 | 2026-09-02 | Four industry codes still carried the PDF's ampersands and could never match a filing: Hospitals, Airlines, Lodging and Tourism. EDGAR full-text search returns 0 Form D documents for each ampersand spelling against 153, 819, 365 and 1,232 for the `and` spelling, and no ampersand appears in any of the 3,571 rows pulled. Evidence in `docs/sources/edgar_industry_enum_spelling_2026-09-02.md`. **No withdrawn phrase**: those spellings are the PDF's own wording and legitimately live in the verbatim capture at `docs/sources/sec_form_d_official_2026-08-29.md`, so a text ban would fail on the evidence archive. The enforcement is the unmapped-code guard in `scripts/04_score.py`, which halts against live data and is what caught this | |
 | 21 | 2026-09-02 | `people` stays JSON in Supabase and is flattened to one plain-text column on export to Clay. Clay receives clean, already-formatted data, and that is decided on formatting rather than on what a credit tier can afford | |
 | 22 | 2026-09-02 | `website_from_edgar` measured across the full scored population instead of a 40-company sample: still 0, now 0 of 830, so Clay resolves every domain itself | `Measured 0/40 on operating companies` |
+| 23 | 2026-09-02 | One human signing for more than three companies is collapsed to the highest-scoring one before Clay, the rest kept and pointed at it. Measured: 4 signers over 34 companies naming 7 humans between them, so per-company sending would be 60 emails to 7 people. New table `signer_list`, new code `dupe_same_signer` | |
+| 24 | 2026-09-02 | Every address written to is recorded in `contacted_emails` and checked when Clay returns, so a person reached once is never reached again. New code `dupe_already_emailed` | |
 
 ---
 
@@ -406,6 +408,44 @@ Clay receives clean, already-formatted data**, and it does not bend for what a c
 
 `mill_list` stores addresses and phone numbers of agencies and mills filing on behalf of companies, so
 that the right candidate addresses and phone numbers can be sent to Clay.
+
+## One person, one email
+
+**A person is written to once. Not once per company they signed for.**
+
+One human signs Form D for many companies, and those companies are one operation wearing several
+names. Measured across the 830 scored: Rezwan Manji signs for 19, Alfonso Cahero for 7, Christopher
+Kane for 4, Tadd Miller for 4. **Those 34 companies name 7 distinct humans between them.** Cahero's
+seven name the identical pair every time; Kane's four name only him. Sending per company would be 60
+emails to 7 people. Corroborated independently by `mill_list`: 16 of Manji's 19 companies, and all of
+Cahero's and Kane's, had already lost their address for being shared by more than three companies.
+
+Two guards do this, at different stages and on different evidence.
+
+**Before Clay, the signer collapse.** `signer_list` counts how many distinct companies each signer
+covers, built exactly as `mill_list` is and for the same reason: it is a table, not a per-run check,
+because a signer who appears four times this month appears again in March and must be caught on the
+next pull too. The signer name is normalised before counting, because `Tadd M. Miller` and
+`Tadd Miller` are one human filed two ways. **Above three companies, only the highest-scoring company
+goes to Clay.** The rest stay in `outbound_companies_scored` marked `dupe_same_signer`, carrying
+`collapsed_into_cik` so any removal can be opened and checked. The kept row carries `also_signed_for`,
+the sibling company names, so nothing is lost and the copy knows it is writing to someone running
+several entities. Measured: 30 of 830 routed out, 4 kept.
+
+**Three is allowed through on purpose**, and the cost is stated rather than hidden: 30 signers over 70
+companies, up to 40 extra emails. Those are caught downstream instead, on better evidence.
+
+**After Clay, the address check.** Every address ever written to is recorded in `contacted_emails`,
+keyed on the address rather than the company, because the thing being protected is a person's inbox
+and it must outlive the run, the company and the campaign. It is checked in the same pass as the
+existing-customer and inbound joins, and a match exits `dupe_already_emailed`. This is what makes the
+threshold of three safe: three companies from one desk usually resolve to one address, and the second
+and third are stopped here.
+
+**Nothing real is ever written to this table in this build**, because only seeded test rows are
+sendable. To prove the check fires, rows are seeded into it marked `is_demo_seed` after Clay returns
+real addresses, and seeded rows are excluded from reported counts. The same method the demo uses for
+the customer tables, and it fabricates nothing upstream of the match.
 
 **A value is an agency's only when more than three distinct companies use it.** Membership is counted
 on distinct CIK, never on how often the value appears, because those two counts mean opposite things.
