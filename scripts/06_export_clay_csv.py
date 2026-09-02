@@ -56,7 +56,7 @@ import httpx
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORTS = os.path.join(ROOT, "exports")
-CLAY_FREE_ROWS = 200
+CLAY_FREE_ROWS = int(sys.argv[sys.argv.index("--top") + 1]) if "--top" in sys.argv else 200
 SEP = "; "
 
 # Values a filing puts in a box to mean 'nothing'. They are not data and must
