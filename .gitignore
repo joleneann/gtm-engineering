@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.venv/
+node_modules/
+exports/
+*.json.key
+google.json
+credentials.json
+service-account*.json
+__pycache__/
+*.pyc
+.DS_Store
+archive/
+.venv/
