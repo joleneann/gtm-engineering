@@ -241,13 +241,29 @@ create table if not exists reason_codes (
     seq             smallint not null
 );
 
--- Mercury's twelve serviceable countries, in EDGAR's own two-character
--- codes. SEEDED IN STEP 3, not here: EDGAR encodes foreign locations with
--- its own code list, so 02_route.py first prints the distinct non-US values
--- actually present in the pull and they are mapped by hand before seeding.
+-- Every EDGAR location code and what it actually means. EDGAR writes places
+-- as its own two-character codes (E9, N4, A1, 2M) and nothing downstream can
+-- read those, so a routed-out company would otherwise report 'E9' rather than
+-- 'Cayman Islands'. THIS IS WHERE THE CODE NAMES ARE LOGGED.
+-- Added by db/migration_002_edgar_codes.sql, which also seeds all 309 codes
+-- verbatim from docs/sources/edgar_state_country_codes_2026-09-02.txt.
+create table if not exists edgar_codes (
+    code        text primary key,
+    label       text not null,
+    kind        text not null,
+    source_url  text,
+    captured_on date,
+    constraint edgar_codes_kind_chk check (kind in ('us_state', 'foreign'))
+);
+
+-- Mercury's twelve serviceable countries, as EDGAR codes. Seeded by
+-- db/seed_serviceable_countries.sql, after every code was looked up in the
+-- captured EDGAR list rather than inferred. The US is absent on purpose: a US
+-- address carries a state code and passes via us_jurisdictions. Canada spans
+-- twelve province and federal codes, so the gate matches any of them.
 -- 02_route.py fails loudly if this table is empty.
 create table if not exists serviceable_countries (
-    edgar_code      text    primary key,
+    edgar_code      text    primary key references edgar_codes (code),
     country_name    text    not null,
     source_url      text,
     captured_on     date

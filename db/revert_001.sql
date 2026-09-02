@@ -21,6 +21,7 @@ drop table if exists industry_scores;
 drop table if exists industry_clusters;
 drop table if exists us_jurisdictions;
 drop table if exists serviceable_countries;
+drop table if exists edgar_codes;
 drop table if exists reason_codes;
 
 drop table if exists entities_raw;
