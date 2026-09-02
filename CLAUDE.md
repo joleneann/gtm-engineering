@@ -25,6 +25,18 @@ and fails if a withdrawn phrase reappears. It reads rather than greps a filtered
 previous version of this check certified a file as clean while the withdrawn rule was sitting in it.
 Run it at the end of every step.
 
+## The plan
+
+`plans/build_plan.md` holds the step order: which step is next, what each reads and writes, and how
+each is verified. Read it at the start of a session before asking what to do; a session once spent its
+opening turns hunting for it because this rule did not exist.
+
+It is the execution order and nothing more. **The source of truth wins on every fact**, and where the
+two disagree the plan is what is wrong. `plans/` is gitignored, and the plan never moves under `docs/`:
+it names decisions by their superseded wording, so the no-drift check correctly fails it as a live
+document. When a step finishes or a rule changes, the plan is corrected in the same turn as the source
+of truth.
+
 ## Scope
 
 - Execute only the step named this session. Do not start, scaffold, or prepare future steps. Do not
