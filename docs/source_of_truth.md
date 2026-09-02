@@ -28,6 +28,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 14 | 2026-09-02 | `serviceable_countries` stores EDGAR's own two-character country codes, each looked up against EDGAR's published list rather than inferred | |
 | 15 | 2026-09-02 | `mill_list` membership counts distinct companies, not occurrences. Measured: of 213 values occurring more than three times, 101 are one company's own address or phone, and excluding all 213 would strip both address and phone from 56 of 830 surviving companies | `appearing more than thrice in the data` |
 | 16 | 2026-09-02 | `rolled_filing_count` joins the Clay payload, so a summed amount is never mistaken for a single raise. The column already exists on `outbound_companies_scored`; no schema change | |
+| 17 | 2026-09-02 | The `contact_name` blanking rule is stated rather than assumed: the `authorizedRepresentative` flag, plus an agent vocabulary matched against `signatureTitle`, and a title naming a real office is kept. Measured 246 distinct titles, 20 agent-flavoured across 92 rows, and 21 rows flagged | |
 
 ---
 
@@ -342,7 +343,7 @@ IDX = Filing Index, XML = Filing, JSON = Company History
 | `address_candidates` | XML issuer street, city, state, zipcode + JSON street, city, state, country, zipcode. Deduped against `mill_list`. Strip punctuation, expand street types, map state to 2-letter code | Entry 3 to find brand names, website, emails |
 | `phone_candidates` | XML issuer phone number and JSON phone. Deduped on `mill_list`. Keep both if different | Entry 4 to find brand names, website, emails |
 | `website_from_edgar` | JSON `website` | Skip domain resolution when EDGAR already has one. Measured 0/40 on operating companies, so usually null, but free when it fires. `investorWebsite` is never sent: it is an investor-relations URL, not the company domain |
-| `contact_name` | XML signer plus title. Blank if attorney or authorised person/representative | To find the contact person |
+| `contact_name` | XML signer plus title. Blank if attorney or authorised person/representative, by the rule below | To find the contact person |
 | `people` | XML related persons first name + last name + relationship. Multiple if several exist | To find the contact person + related persons |
 | `amount_sold` | XML | |
 | `amount_remaining` | XML | |
@@ -351,6 +352,18 @@ IDX = Filing Index, XML = Filing, JSON = Company History
 | `rolled_filing_count` | Rollup | **How many Form D filings were added together to produce `amount_sold`.** 1 for most companies. Measured: 113 of 830 roll up more than one filing, and the largest is a note-issuing vehicle with 27 in twelve months. Without it, a summed figure is indistinguishable from a single raise, and copy generated from the row could describe twenty-seven issuances as one round |
 | `filing_date` | IDX | |
 | `score` | | |
+
+**`contact_name` is blanked when the signer is not the company's own officer**, on two tests. The
+filing's `authorizedRepresentative` flag being true blanks it outright, measured on 21 of 1,103
+surviving filing rows. Otherwise the free-text `signatureTitle` is matched against the agent
+vocabulary: attorney, attorney-in-fact, power of attorney, authorised person, authorised
+representative, authorised signatory, authorised signer, filing agent, registered agent.
+
+**A title that also names a real office keeps its name**, because the agent words appear inside
+genuine officer titles: `chief executive officer, duly authorized` is a CEO, and blanking it would
+throw away exactly the human the payload exists to find. Measured: `signatureTitle` is free text with
+246 distinct values across the surviving rows, of which 20 are agent-flavoured and cover 92 rows.
+Every row carries a signer, so this never fires on a missing name: 0 of 1,103 rows have none.
 
 `mill_list` stores addresses and phone numbers of agencies and mills filing on behalf of companies, so
 that the right candidate addresses and phone numbers can be sent to Clay.
