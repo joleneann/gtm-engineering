@@ -342,6 +342,18 @@ update edgar_codes
 
 -- serviceable_countries now points at it, so a serviceable code cannot be one
 -- EDGAR does not define.
-alter table serviceable_countries
-    add constraint serviceable_countries_code_fk
-    foreign key (edgar_code) references edgar_codes (code);
+--
+-- Guarded because ADD CONSTRAINT has no IF NOT EXISTS and every script here
+-- must be safe to re-run.
+do $$
+begin
+    if not exists (
+        select 1 from pg_constraint
+         where conname = 'serviceable_countries_code_fk'
+           and conrelid = 'serviceable_countries'::regclass
+    ) then
+        alter table serviceable_countries
+            add constraint serviceable_countries_code_fk
+            foreign key (edgar_code) references edgar_codes (code);
+    end if;
+end $$;
