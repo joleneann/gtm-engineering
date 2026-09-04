@@ -48,7 +48,14 @@ sys.stdout.reconfigure(encoding="utf-8")
 SEED_CUSTOMER = "atoms.co"
 SEED_INBOUND = "qualitate.io"
 SEED_CONTACTED = "delphiinteractive.com"
-TEST_ROW_DOMAINS = ["coderabbit.ai", "blacksmith.sh"]
+# Each test row gets its own inbox. One shared address cannot demonstrate a
+# reply: the sender is what ties a reply back to a row, and two rows sharing
+# an address make that match ambiguous. TEST_EMAILS is the allowlist, and it
+# is the only set of addresses anything is ever sent to.
+TEST_ROWS = {
+    "blacksmith.sh": 0,
+    "coderabbit.ai": 1,
+}
 
 
 def load_env():
@@ -61,7 +68,8 @@ def load_env():
         if "=" in line and not line.startswith("#"):
             k, v = line.split("=", 1)
             env[k.strip()] = v.strip().strip('"').strip("'")
-    for k in ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "TEST_EMAIL", "TEST_PHONE"):
+    for k in ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "TEST_EMAIL",
+              "TEST_EMAILS", "TEST_PHONE"):
         if not env.get(k):
             sys.exit("%s is not set in .env" % k)
     return env
@@ -142,7 +150,7 @@ def enriched():
 # ------------------------------------------------------------------- seeding
 def seed():
     rows = {apex(r["domain"]): r for r in enriched() if r["domain"]}
-    for d in (SEED_CUSTOMER, SEED_INBOUND, SEED_CONTACTED, *TEST_ROW_DOMAINS):
+    for d in (SEED_CUSTOMER, SEED_INBOUND, SEED_CONTACTED, *TEST_ROWS):
         if d not in rows:
             sys.exit("seed domain %s is not among the enriched rows" % d)
 
@@ -184,16 +192,23 @@ def seed():
     }, on_conflict="email_normalised")
 
     # Test rows. Nothing is ever sent to a real company, so the only sendable
-    # addresses are TEST_EMAIL. The real address is replaced, not kept beside it.
-    for d in TEST_ROW_DOMAINS:
+    # addresses are the ones in TEST_EMAILS. The real address is replaced, not
+    # kept beside the flag: an address still sitting in the row is an address
+    # that can still be sent to.
+    inboxes = [a.strip().lower() for a in ENV["TEST_EMAILS"].split(",") if a.strip()]
+    if len(inboxes) < len(TEST_ROWS):
+        sys.exit("TEST_EMAILS has %d addresses, %d test rows need one each"
+                 % (len(inboxes), len(TEST_ROWS)))
+    for d, i in TEST_ROWS.items():
         patch("outbound_companies_scored", {"cik": "eq.%s" % rows[d]["cik"]},
-              {"is_test_row": True, "work_email": ENV["TEST_EMAIL"]})
+              {"is_test_row": True, "work_email": inboxes[i]})
 
     print("seeded:")
     print("  existing_mercury_customers  %s" % SEED_CUSTOMER)
     print("  mercury_inbound             %s" % SEED_INBOUND)
     print("  contacted_emails            %s (address redacted)" % SEED_CONTACTED)
-    print("  test rows                   %s" % ", ".join(TEST_ROW_DOMAINS))
+    for d, i in TEST_ROWS.items():
+        print("  test row                    %-24s -> %s" % (d, inboxes[i]))
     print()
 
 
