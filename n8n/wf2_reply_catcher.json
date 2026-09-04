@@ -1,0 +1,132 @@
+{
+  "name": "GTME 2: reply catcher",
+  "nodes": [
+    {
+      "parameters": {
+        "postProcessAction": "read",
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000001",
+      "name": "Inbox",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [-560, 300],
+      "notes": "IMAP polling, not a webhook. A webhook would need a public URL, and a self-hosted tunnel gets a new address every restart, so the workflow would break every time n8n is stopped."
+    },
+    {
+      "parameters": {
+        "jsCode": "// The sender's address is what ties a reply back to a row. Strip the\n// display name: \"Travis <travis@atoms.co>\" has to become travis@atoms.co.\nconst out = [];\nfor (const item of $input.all()) {\n  const raw = item.json.from || item.json.headers?.from || '';\n  const m = String(raw).match(/[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}/);\n  if (!m) continue;\n  out.push({ json: { from_email: m[0].toLowerCase(), subject: item.json.subject || '' } });\n}\nreturn out;"
+      },
+      "id": "b2000000-0000-4000-8000-000000000002",
+      "name": "Sender address",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-340, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://qrcxsejvyfjifzsusiab.supabase.co/rest/v1/outbound_companies_scored",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "select", "value": "cik,current_name_candidates,work_email,pipedrive_deal_id,crm_stage,sent_at" },
+            { "name": "work_email", "value": "=eq.{{ $json.from_email }}" },
+            { "name": "crm_stage", "value": "eq.emailed" },
+            { "name": "limit", "value": "1" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000003",
+      "name": "Find the deal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-120, 300],
+      "notes": "crm_stage = emailed, so only a reply to something actually sent moves a deal. Every other message in the inbox matches nothing and stops here.",
+      "credentials": {
+        "httpHeaderAuth": { "id": "SUPABASE_CRED", "name": "Supabase service role" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "r1",
+              "leftValue": "={{ $json.pipedrive_deal_id }}",
+              "rightValue": "",
+              "operator": { "type": "number", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000004",
+      "name": "Is it one of ours?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.pipedrive.com/api/v1/deals/{{ $json.pipedrive_deal_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ stage_id: 2 }) }}",
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000005",
+      "name": "Deal to Replied",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 220],
+      "notes": "stage_id 2 is Replied. Held, Closed Won and Closed Lost are set by the person working the deal, not by this workflow.",
+      "credentials": {
+        "httpHeaderAuth": { "id": "PIPEDRIVE_CRED", "name": "Pipedrive API token" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://qrcxsejvyfjifzsusiab.supabase.co/rest/v1/outbound_companies_scored",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "cik", "value": "=eq.{{ $('Find the deal').item.json.cik }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ replied_at: new Date().toISOString(), crm_stage: \"replied\" }) }}",
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000006",
+      "name": "Log the reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 220],
+      "credentials": {
+        "httpHeaderAuth": { "id": "SUPABASE_CRED", "name": "Supabase service role" }
+      }
+    }
+  ],
+  "connections": {
+    "Inbox": { "main": [[{ "node": "Sender address", "type": "main", "index": 0 }]] },
+    "Sender address": { "main": [[{ "node": "Find the deal", "type": "main", "index": 0 }]] },
+    "Find the deal": { "main": [[{ "node": "Is it one of ours?", "type": "main", "index": 0 }]] },
+    "Is it one of ours?": { "main": [[{ "node": "Deal to Replied", "type": "main", "index": 0 }], []] },
+    "Deal to Replied": { "main": [[{ "node": "Log the reply", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

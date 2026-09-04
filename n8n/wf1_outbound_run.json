@@ -1,0 +1,329 @@
+{
+  "name": "GTME 1: outbound run",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-560, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://qrcxsejvyfjifzsusiab.supabase.co/rest/v1/outbound_companies_scored",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "select", "value": "cik,current_name_candidates,domain,work_email,contact_name,contact_title,subject,copy_body,copy_signal,copy_observation,score,amount_sold,industry,filing_date,is_test_row,pipedrive_org_id,pipedrive_person_id,pipedrive_deal_id" },
+            { "name": "enrichment_status", "value": "eq.enriched" },
+            { "name": "dedupe_status", "value": "eq.unique" },
+            { "name": "copy_body", "value": "not.is.null" },
+            { "name": "pipedrive_deal_id", "value": "is.null" },
+            { "name": "order", "value": "score.desc" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Fetch dispatchable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-340, 300],
+      "notes": "pipedrive_deal_id is null is the idempotency. A row already in the CRM is not fetched, so re-running never makes a second deal.",
+      "credentials": {
+        "httpHeaderAuth": { "id": "SUPABASE_CRED", "name": "Supabase service role" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pipedrive.com/api/v1/organizations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $json.current_name_candidates[0], \"1f4ef25c25e14c1351d84030753e555b7f019c4b\": String($json.cik), \"f74ce5e0ca0db0f38abe652c19a5a6013e42f6ba\": $json.domain, \"7302cd1183bc0878726d053b9433c6a776b67bdf\": $json.industry }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Pipedrive: organization",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-120, 300],
+      "notes": "CIK, Domain and Industry belong to the company and outlive the deal, so they live here.",
+      "credentials": {
+        "httpHeaderAuth": { "id": "PIPEDRIVE_CRED", "name": "Pipedrive API token" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pipedrive.com/api/v1/persons",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $('Fetch dispatchable').item.json.contact_name, email: [{ value: $('Fetch dispatchable').item.json.work_email, primary: true, label: \"work\" }], org_id: $json.data.id, \"d879fcf316034a9607ea9c0dbba289822d0c44a9\": $('Fetch dispatchable').item.json.contact_title }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Pipedrive: person",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [100, 300],
+      "notes": "The built-in email field, not a custom one: this is the field Pipedrive matches an inbound reply against.",
+      "credentials": {
+        "httpHeaderAuth": { "id": "PIPEDRIVE_CRED", "name": "Pipedrive API token" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pipedrive.com/api/v1/deals",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: $('Fetch dispatchable').item.json.current_name_candidates[0] + \", Form D \" + $('Fetch dispatchable').item.json.filing_date, value: $('Fetch dispatchable').item.json.amount_sold, currency: \"USD\", org_id: $('Pipedrive: organization').item.json.data.id, person_id: $json.data.id, pipeline_id: 1, stage_id: 1, \"cdcd3b138e0bd1897967da5402993eda7d061e86\": $('Fetch dispatchable').item.json.filing_date, \"6bce248051120fe8897a8025d4d024517114e34d\": $('Fetch dispatchable').item.json.score, \"209ff0beed324ebc4951a62a09ce389b2f6f53d8\": $('Fetch dispatchable').item.json.subject, \"fb5b67596d7a50ab7a36fa4431a6ed86eb768394\": $('Fetch dispatchable').item.json.copy_body, \"037a257f251c913cefa6cf1b01f05da8840bf0ec\": $('Fetch dispatchable').item.json.copy_signal, \"50af5fa7ac87a6e45286b13f88379428dad798d6\": $('Fetch dispatchable').item.json.copy_observation }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Pipedrive: deal at Enriched",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 300],
+      "notes": "stage_id 1 is Enriched. The score, the amount and the written email belong to this one raise, so they live on the deal.",
+      "credentials": {
+        "httpHeaderAuth": { "id": "PIPEDRIVE_CRED", "name": "Pipedrive API token" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://qrcxsejvyfjifzsusiab.supabase.co/rest/v1/outbound_companies_scored",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "cik", "value": "=eq.{{ $('Fetch dispatchable').item.json.cik }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Prefer", "value": "return=representation" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ pipedrive_org_id: $('Pipedrive: organization').item.json.data.id, pipedrive_person_id: $('Pipedrive: person').item.json.data.id, pipedrive_deal_id: $json.data.id, pipedrive_synced_at: new Date().toISOString(), crm_stage: \"enriched\" }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Write ids back",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 300],
+      "notes": "Supabase owns the state. The ids go back the moment the objects exist, so a run that dies here resumes instead of creating a second set.",
+      "credentials": {
+        "httpHeaderAuth": { "id": "SUPABASE_CRED", "name": "Supabase service role" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Fetch dispatchable').item.json.is_test_row }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Is this a test row?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $('Fetch dispatchable').item.json.work_email }}",
+              "rightValue": "joleneann@gmail.com",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Recipient must be the test address",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [980, 180],
+      "notes": "The compliance rule. Nothing is ever sent to a real company, and a mislabelled test row must break the run rather than quietly send."
+    },
+    {
+      "parameters": {
+        "errorMessage": "=Refusing to send. Row cik={{ $('Fetch dispatchable').item.json.cik }} is flagged is_test_row but its address is not the test address. Nothing is ever sent to a real company."
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Stop: not the test address",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1200, 320]
+    },
+    {
+      "parameters": {
+        "fromEmail": "joleneann@gmail.com",
+        "toEmail": "={{ $('Fetch dispatchable').item.json.work_email }}",
+        "subject": "={{ $('Fetch dispatchable').item.json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $('Fetch dispatchable').item.json.copy_body }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000010",
+      "name": "Send",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1200, 60],
+      "notes": "Plain text, no HTML wrapper and no tracking. A tracking pixel or a redirect domain is what hurts deliverability, not one bare link."
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.pipedrive.com/api/v1/deals/{{ $('Pipedrive: deal at Enriched').item.json.data.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ stage_id: 6 }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000011",
+      "name": "Deal to Emailed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1420, 60],
+      "credentials": {
+        "httpHeaderAuth": { "id": "PIPEDRIVE_CRED", "name": "Pipedrive API token" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://qrcxsejvyfjifzsusiab.supabase.co/rest/v1/outbound_companies_scored",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "cik", "value": "=eq.{{ $('Fetch dispatchable').item.json.cik }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ sent_at: new Date().toISOString(), crm_stage: \"emailed\" }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000012",
+      "name": "Mark sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 60],
+      "credentials": {
+        "httpHeaderAuth": { "id": "SUPABASE_CRED", "name": "Supabase service role" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://qrcxsejvyfjifzsusiab.supabase.co/rest/v1/contacted_emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [{ "name": "on_conflict", "value": "email_normalised" }]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Prefer", "value": "resolution=merge-duplicates" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ email_normalised: $('Fetch dispatchable').item.json.work_email.toLowerCase(), cik: $('Fetch dispatchable').item.json.cik, company_name: $('Fetch dispatchable').item.json.current_name_candidates[0], source: \"outbound\", is_demo_seed: false }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000013",
+      "name": "Log the address",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1860, 60],
+      "notes": "Keyed on the address, not the company: the thing being protected is a person's inbox and it outlives the run.",
+      "credentials": {
+        "httpHeaderAuth": { "id": "SUPABASE_CRED", "name": "Supabase service role" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pipedrive.com/api/v1/activities",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ subject: \"Draft ready, do not send\", type: \"task\", deal_id: $('Pipedrive: deal at Enriched').item.json.data.id, person_id: $('Pipedrive: person').item.json.data.id, org_id: $('Pipedrive: organization').item.json.data.id, note: \"Subject: \" + $('Fetch dispatchable').item.json.subject + \"\\n\\n\" + $('Fetch dispatchable').item.json.copy_body, done: false }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000014",
+      "name": "Real company: prepare a task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 460],
+      "notes": "A real account gets a prepared task and a drafted message. The deal stays at Enriched. A human sends it or nobody does.",
+      "credentials": {
+        "httpHeaderAuth": { "id": "PIPEDRIVE_CRED", "name": "Pipedrive API token" }
+      }
+    }
+  ],
+  "connections": {
+    "Run": { "main": [[{ "node": "Fetch dispatchable", "type": "main", "index": 0 }]] },
+    "Fetch dispatchable": { "main": [[{ "node": "Pipedrive: organization", "type": "main", "index": 0 }]] },
+    "Pipedrive: organization": { "main": [[{ "node": "Pipedrive: person", "type": "main", "index": 0 }]] },
+    "Pipedrive: person": { "main": [[{ "node": "Pipedrive: deal at Enriched", "type": "main", "index": 0 }]] },
+    "Pipedrive: deal at Enriched": { "main": [[{ "node": "Write ids back", "type": "main", "index": 0 }]] },
+    "Write ids back": { "main": [[{ "node": "Is this a test row?", "type": "main", "index": 0 }]] },
+    "Is this a test row?": {
+      "main": [
+        [{ "node": "Recipient must be the test address", "type": "main", "index": 0 }],
+        [{ "node": "Real company: prepare a task", "type": "main", "index": 0 }]
+      ]
+    },
+    "Recipient must be the test address": {
+      "main": [
+        [{ "node": "Send", "type": "main", "index": 0 }],
+        [{ "node": "Stop: not the test address", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send": { "main": [[{ "node": "Deal to Emailed", "type": "main", "index": 0 }]] },
+    "Deal to Emailed": { "main": [[{ "node": "Mark sent", "type": "main", "index": 0 }]] },
+    "Mark sent": { "main": [[{ "node": "Log the address", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}
