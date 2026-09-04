@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step 4: build the mill list.
+Step 03: build the mill list.
 
 Reads every issuer address and phone number in filings_raw (every filing,
 regardless of what 02_route.py did with it: a filing agent files for funds

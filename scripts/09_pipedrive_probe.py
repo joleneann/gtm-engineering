@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Read-only probe of the Pipedrive account, run once after the CRM is set up by hand.
+Step 09: read-only probe of the Pipedrive account, run once after the CRM is set up by hand.
 
 Confirms the token authenticates, prints the pipeline and its stages, and lists
 every custom field with its API key. Pipedrive addresses a custom field by a

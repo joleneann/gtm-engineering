@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step 5: roll up, score, and build the Clay payload.
+Step 04: roll up, score, and build the Clay payload.
 
 Reads outbound_companies_unscored (one row per filing), entities_raw,
 filing_related_persons, filing_former_names, industry_scores and mill_list.

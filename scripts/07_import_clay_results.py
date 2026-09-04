@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step 7: bring Clay's return home into outbound_companies_scored.
+Step 07: bring Clay's return home into outbound_companies_scored.
 
 n8n reads Supabase, never Clay and never a CSV, so the enrichment has to land in
 the table before the CRM leg can run.

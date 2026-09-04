@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step 7: export the Clay payload as CSV.
+Step 06: export the Clay payload as CSV.
 
 Reads outbound_companies_scored and writes exports/, which is gitignored
 because it holds real contact data. Nothing is sent anywhere; this produces

@@ -3,8 +3,9 @@
 Enforce the no-drift rule: a withdrawn phrase must never reappear in a live document.
 
 Reads the changelog table at the top of docs/source_of_truth.md, collects every
-`withdrawn_phrase`, then READS every file under docs/ and CLAUDE.md in full and
-fails if any withdrawn phrase is present outside the changelog row that retired it.
+`withdrawn_phrase`, then READS every file under docs/, plus CLAUDE.md and
+README.md, in full, and fails if any withdrawn phrase is present outside the
+changelog row that retired it.
 
 It reads whole files rather than grepping a filtered subset on purpose. The previous
 version of this check filtered files out of its own search and certified a document as
@@ -73,9 +74,14 @@ def withdrawn_phrases(sot_text):
 
 
 def live_files():
-    """Every file under docs/, plus CLAUDE.md. archive/ is deliberately excluded:
-    it is the record of what was withdrawn and is supposed to still contain it."""
-    out = [os.path.join(ROOT, "CLAUDE.md")]
+    """Every file under docs/, plus CLAUDE.md and README.md. archive/ is
+    deliberately excluded: it is the record of what was withdrawn and is
+    supposed to still contain it.
+
+    README.md is in here because it is a short version of the source of truth,
+    and a summary is exactly the kind of document that keeps a withdrawn
+    sentence alive after the long one has dropped it."""
+    out = [os.path.join(ROOT, "CLAUDE.md"), os.path.join(ROOT, "README.md")]
     for base, _dirs, names in os.walk(os.path.join(ROOT, "docs")):
         for n in names:
             if n.lower().endswith((".md", ".json", ".txt", ".sql")):

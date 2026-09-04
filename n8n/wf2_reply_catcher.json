@@ -38,7 +38,7 @@
       "position": [-380, 300],
       "notes": "Scoped to the test inboxes. Everything else in the mailbox is ignored before it is ever fetched, so this cannot repeat the whole-mailbox read that took n8n to a 2 GB heap.",
       "credentials": {
-        "gmailOAuth2": { "id": "UlmEx2JfwxqECVYg", "name": "Gmail account" }
+        "gmailOAuth2": { "id": "GMAIL_CRED", "name": "Gmail account" }
       }
     },
     {
@@ -75,7 +75,7 @@
       "position": [60, 300],
       "notes": "crm_stage = emailed, so only a reply to something actually sent moves a deal. Anything else in the mailbox matches nothing and stops at the next node.",
       "credentials": {
-        "httpHeaderAuth": { "id": "rk1qdoaNbPQKApH0", "name": "Supabase service role" }
+        "httpHeaderAuth": { "id": "SUPABASE_CRED", "name": "Supabase service role" }
       }
     },
     {
@@ -106,7 +106,7 @@
       "position": [500, 300],
       "notes": "stage_id 2 is Replied. Held, Closed Won and Closed Lost are set by the person working the deal, not by this workflow.",
       "credentials": {
-        "httpHeaderAuth": { "id": "t43oltVpKrJSzMOA", "name": "Pipedrive API token" }
+        "httpHeaderAuth": { "id": "PIPEDRIVE_CRED", "name": "Pipedrive API token" }
       }
     },
     {
@@ -133,7 +133,7 @@
       "position": [720, 300],
       "notes": "Supabase owns the state; Pipedrive mirrors it. The stage moves first, then the truth layer records it.",
       "credentials": {
-        "httpHeaderAuth": { "id": "rk1qdoaNbPQKApH0", "name": "Supabase service role" }
+        "httpHeaderAuth": { "id": "SUPABASE_CRED", "name": "Supabase service role" }
       }
     }
   ],

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step 2: ingest SEC Form D into filings_raw, its two child tables, and entities_raw.
+Step 01: ingest SEC Form D into filings_raw, its two child tables, and entities_raw.
 
 Three public SEC endpoints, no key, no scraping, $0:
 

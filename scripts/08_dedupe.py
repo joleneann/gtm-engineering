@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step 8: dedupe the enriched rows against Mercury's existing customers, its
+Step 08: dedupe the enriched rows against Mercury's existing customers, its
 inbound, and every address ever written to.
 
 The dedupe runs after Clay because it joins on domain, and domain only exists

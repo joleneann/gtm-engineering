@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step 3: route filings_raw + entities_raw into scope.
+Step 02: route filings_raw + entities_raw into scope.
 
 Reads filings_raw (every issuer row: both pulled_reason values, daily_index and
 rollup_prior, and every co-issuer, since "one company, one row" applies to

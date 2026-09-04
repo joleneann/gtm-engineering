@@ -7,8 +7,10 @@ placeholder credential ids in the workflow files to the real ones, and posts the
 workflows to n8n's public API. Doing it by hand means clicking a credential onto
 nine nodes and getting one of them wrong.
 
-The Gmail credentials are deliberately not created here. An app password is not
-mine to handle; it goes into n8n's own SMTP and IMAP forms by hand.
+The Gmail credentials are deliberately not created here. The SMTP password is an
+app password and is not mine to handle, and the reply leg's Gmail credential is
+OAuth, which only completes in a browser. Both are made in n8n's own UI; this
+script finds the OAuth one by its name and binds it to the node.
 
 Reads:  n8n/*.json, .env (SUPABASE_SERVICE_ROLE_KEY, PIPEDRIVE_API_TOKEN,
         N8N_API_KEY)
@@ -25,6 +27,7 @@ import os
 import sys
 import json
 import glob
+import sqlite3
 
 import httpx
 
@@ -49,6 +52,10 @@ CREDS = {
         "header": "x-api-token",
     },
 }
+
+# OAuth, so it cannot be built from a key in .env. Made in the UI and found by
+# this name.
+GMAIL_NAME = "Gmail account"
 
 
 def load_env():
@@ -82,6 +89,24 @@ def call(method, path, **kw):
     return r.json() if r.text.strip() else {}
 
 
+def gmail_credential_id():
+    """The OAuth credential, made by hand in the UI, found by its name.
+
+    The public API can create a credential and cannot list one, so this reads
+    n8n's SQLite directly. A read, while n8n is running, of a name and an id:
+    no secret is touched and nothing is written."""
+    db = os.path.join(os.path.expanduser("~"), ".n8n", "database.sqlite")
+    if not os.path.exists(db):
+        return None
+    con = sqlite3.connect("file:%s?mode=ro" % db.replace("\\", "/"), uri=True)
+    try:
+        row = con.execute("select id from credentials_entity where name = ?",
+                          (GMAIL_NAME,)).fetchone()
+    finally:
+        con.close()
+    return row[0] if row else None
+
+
 def ensure_credentials():
     """The public API can create a credential but cannot list them, so a second
     run gets a fresh one. Names are identical, which is harmless: the workflows
@@ -96,6 +121,13 @@ def ensure_credentials():
         got = call("POST", "/credentials", json=body)
         ids[placeholder] = got["id"]
         print("credential  %-24s id=%s" % (spec["name"], got["id"]))
+    gmail = gmail_credential_id()
+    if gmail:
+        ids["GMAIL_CRED"] = gmail
+        print("credential  %-24s id=%s  (found, made by hand)" % (GMAIL_NAME, gmail))
+    else:
+        print("credential  %-24s NOT FOUND. GTME 2 installs with that node "
+              "unbound; make it in the UI and re-run." % GMAIL_NAME)
     return ids
 
 
@@ -148,14 +180,15 @@ def main():
         unbound = []
         for n in wf["nodes"]:
             for ctype, c in (n.get("credentials") or {}).items():
-                if c.get("id") in CREDS:
+                if c.get("id") in CREDS or c.get("id") == "GMAIL_CRED":
                     unbound.append(n["name"])
         print("  %-24s nodes=%-3d active=%-6s unbound credentials: %s"
               % (name, len(wf["nodes"]), wf.get("active"), unbound or "none"))
     print()
-    print("  Still to do by hand, because an app password is not mine to handle:")
-    print("  SMTP  smtp.gmail.com:465 SSL, onto the Send node in GTME 1")
-    print("  IMAP  imap.gmail.com:993 SSL, onto the Inbox node in GTME 2")
+    print("  Still to do by hand, because neither secret is mine to handle:")
+    print("  SMTP   smtp.gmail.com:465 SSL, app password, onto the Send node in GTME 1")
+    print("  Gmail  the OAuth credential named 'Gmail account', made in the n8n UI.")
+    print("         Re-run this script once it exists and GTME 2 binds to it.")
 
 
 if __name__ == "__main__":

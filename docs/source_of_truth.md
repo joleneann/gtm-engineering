@@ -51,6 +51,8 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 37 | 2026-09-04 | `v_funnel` rewritten and `v_outreach` added, in `db/migration_003_views.sql`. The old funnel counted 814 of the 830 scored companies nowhere, because it looked for a `not_selected` status no script writes, and it called 10 rows dispatchable on enrichment and dedupe alone when 5 of those had no copy to send | `every stage from ingest to
 | 38 | 2026-09-04 | Every view is created `with (security_invoker = on)`. Supabase's advisor raised all three as critical: a view without it runs with its creator's permissions rather than the caller's, so anything exposed through the API reads with owner rights and steps around row-level security. `v_score_distribution` carried the flaw from the original schema | |
 dispatchable` |
+| 39 | 2026-09-04 | `enrich_no_domain` is a measured zero, not a status any row carries. The import writes `enrich_no_work_email` where a domain resolved and no address survived, and leaves a row Clay never reached at `pending`. The old sentence contradicted this document's own funnel section two pages later | `flagged enrich_no_domain or` |
+| 40 | 2026-09-04 | `README.md` added: a short version of this document for someone opening the repository, and read in full by `scripts/00_doc_check.py` like everything under `docs/`, so it cannot drift away from this one | |
 
 ---
 
@@ -589,9 +591,11 @@ waterfall's domain adds no coverage and only offers filing agents.
 `contact_name` is rewritten on import from Clay's split column and the title it dropped lands in
 `contact_title`, which is where it should have been written in the first place.
 
-Rows Clay cannot resolve do not disappear. They are flagged `enrich_no_domain` or
-`enrich_no_work_email` and counted in the funnel. Contactability is settled here, upstream of the
-sender: a row only becomes dispatchable when it has a verified email.
+Rows Clay cannot resolve do not disappear. A row with a domain and no address is flagged
+`enrich_no_work_email` and counted in the funnel; a row Clay never reached stays `pending` and is
+counted as `free_tier_row_cap`. `enrich_no_domain` exists in `reason_codes` and fired on none of the
+sixteen Clay reached, which is a measured zero rather than an unused code. Contactability is settled
+here, upstream of the sender: a row only becomes dispatchable when it has a verified email.
 
 ## Deduping against inbound and existing customers
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step 6: collapse companies that share a signer, so one person gets one email.
+Step 05: collapse companies that share a signer, so one person gets one email.
 
 Reads outbound_companies_unscored (for the signer on each filing) and
 outbound_companies_scored. Writes signer_list, and marks the collapsed rows on

@@ -11,10 +11,12 @@ Reads:  the workflow JSON named on the command line
 Writes: workflow_entity in ~/.n8n/database.sqlite, after a timestamped backup
 Cost:   nothing.
 
-Matched by name, so it replaces rather than duplicates. Credential ids in the
-file must be real ids from credentials_entity; the script fails if one is not,
-because a workflow that imports with an unbound credential looks fine and then
-fails on the node at run time.
+Matched by name, so it replaces rather than duplicates. The workflow files carry
+placeholder credential ids (SUPABASE_CRED, PIPEDRIVE_CRED, GMAIL_CRED), which are
+resolved here against credentials_entity by the credential's NAME, so no real id
+and no secret is ever committed. A file naming a credential this n8n does not
+have stops the run, because a workflow that imports with an unbound credential
+looks correct and then fails on the node.
 
 Workflows are installed deactivated. Activating a trigger is a deliberate act.
 
@@ -72,13 +74,24 @@ con.row_factory = sqlite3.Row
 cur = con.cursor()
 
 # Every credential the file names must exist, or the workflow imports looking
-# correct and fails on the node at run time.
+# correct and fails on the node at run time. The file names it by the display
+# name beside a placeholder id, and the id is looked up here: committing a real
+# id would tie the file to one installation, and the ids are not secrets but
+# they are not portable either.
 have = {r["id"]: r["name"] for r in cur.execute("select id, name from credentials_entity")}
+by_name = {}
+for cid, cname in have.items():
+    by_name.setdefault(cname, cid)
 for n in wf["nodes"]:
     for ctype, cred in (n.get("credentials") or {}).items():
-        if cred.get("id") not in have:
-            sys.exit("node %r wants credential id %s (%s), which does not exist"
-                     % (n["name"], cred.get("id"), cred.get("name")))
+        if cred.get("id") in have:
+            continue
+        real = by_name.get(cred.get("name"))
+        if not real:
+            sys.exit("node %r wants the credential named %r, which this n8n does "
+                     "not have. Create it in the UI first."
+                     % (n["name"], cred.get("name")))
+        cred["id"] = real
 
 # Every connection endpoint must name a node that exists. A rename that misses
 # the connections column shows only as "invalid workflow structure" in the UI.
