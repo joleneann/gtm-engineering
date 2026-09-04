@@ -33,7 +33,7 @@
 -- Two stages are named for what actually happened rather than for a status:
 -- never_sent_to_clay is a budget boundary, not a resolution failure, and
 -- has_copy is the only count from which an email can leave.
-create or replace view v_funnel as
+create or replace view v_funnel with (security_invoker = on) as
 with stages as (
   select  1 as seq, 'ingested' as stage, null::text as reason_code,
           (select count(*) from filings_raw where is_primary_issuer) as companies
@@ -92,7 +92,7 @@ select  seq, stage, reason_code, companies,
 -- SQL rather than asserted in prose: real companies sit at 'enriched' with
 -- sent = 0, and every row with sent > 0 is a test row. A real company appearing
 -- with sent > 0 would be the failure, and here it would be one line.
-create or replace view v_outreach as
+create or replace view v_outreach with (security_invoker = on) as
 select  crm_stage,
         count(*)                                       as deals,
         count(*) filter (where is_test_row)            as test_rows,
@@ -103,3 +103,18 @@ select  crm_stage,
  where  pipedrive_deal_id is not null
  group  by crm_stage
  order  by crm_stage;
+
+
+-- least() clamps a perfect 10.00 into the top bucket rather than letting
+-- width_bucket push it to the out-of-range 11th.
+create or replace view v_score_distribution with (security_invoker = on) as
+select  least(width_bucket(score, 0, 10, 10), 10) as bucket,
+        concat((least(width_bucket(score, 0, 10, 10), 10) - 1)::text, ' to ',
+                least(width_bucket(score, 0, 10, 10), 10)::text) as score_range,
+        count(*)             as companies,
+        round(min(score), 2) as min_score,
+        round(max(score), 2) as max_score
+  from  outbound_companies_scored
+ where  score is not null
+ group  by 1
+ order  by 1;

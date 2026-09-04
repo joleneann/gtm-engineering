@@ -626,7 +626,7 @@ create table if not exists contacted_emails (
 -- so counting every pending row put them in two stages at once and the
 -- funnel added to 860 against 830 scored. A stage a company can be in twice
 -- is not a funnel.
-create or replace view v_funnel as
+create or replace view v_funnel with (security_invoker = on) as
 with stages as (
   select  1 as seq, 'ingested' as stage, null::text as reason_code,
           (select count(*) from filings_raw where is_primary_issuer) as companies
@@ -685,7 +685,7 @@ select  seq, stage, reason_code, companies,
 -- SQL rather than asserted in prose: real companies sit at 'enriched' with
 -- sent = 0, and every row with sent > 0 is a test row. A real company appearing
 -- with sent > 0 would be the failure, and here it would be one line.
-create or replace view v_outreach as
+create or replace view v_outreach with (security_invoker = on) as
 select  crm_stage,
         count(*)                                       as deals,
         count(*) filter (where is_test_row)            as test_rows,
@@ -700,7 +700,7 @@ select  crm_stage,
 
 -- least() clamps a perfect 10.00 into the top bucket rather than letting
 -- width_bucket push it to the out-of-range 11th.
-create or replace view v_score_distribution as
+create or replace view v_score_distribution with (security_invoker = on) as
 select  least(width_bucket(score, 0, 10, 10), 10) as bucket,
         concat((least(width_bucket(score, 0, 10, 10), 10) - 1)::text, ' to ',
                 least(width_bucket(score, 0, 10, 10), 10)::text) as score_range,

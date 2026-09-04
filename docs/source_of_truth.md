@@ -49,6 +49,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 35 | 2026-09-04 | Domain comes from Claygent alone. The Find Work Email waterfall also emits one; on the 16 resolved rows the two disagreed five times and the waterfall was wrong every time, offering the filing agent's law firm, a data vendor or yahoo.com. It adds no coverage Claygent did not already have, so it is not read | |
 | 36 | 2026-09-04 | The reply leg reads Gmail over OAuth, not IMAP. IMAP connected, reported no error, and returned nothing; its unread filter also fought the run, because opening the inbox to check whether mail had arrived marked it read and it stopped matching. Gmail's API answers a query and says why when it cannot | |
 | 37 | 2026-09-04 | `v_funnel` rewritten and `v_outreach` added, in `db/migration_003_views.sql`. The old funnel counted 814 of the 830 scored companies nowhere, because it looked for a `not_selected` status no script writes, and it called 10 rows dispatchable on enrichment and dedupe alone when 5 of those had no copy to send | `every stage from ingest to
+| 38 | 2026-09-04 | Every view is created `with (security_invoker = on)`. Supabase's advisor raised all three as critical: a view without it runs with its creator's permissions rather than the caller's, so anything exposed through the API reads with owner rights and steps around row-level security. `v_score_distribution` carried the flaw from the original schema | |
 dispatchable` |
 
 ---
@@ -775,6 +776,11 @@ Measured 2026-09-04:
 
 This is the compliance rule made readable in SQL rather than asserted in prose. Real companies sit at
 `enriched` with `sent = 0`. A real company with `sent > 0` would be one visible line.
+
+Both views, and `v_score_distribution`, are created **`with (security_invoker = on)`**. Without it a
+view runs with its creator's permissions rather than the caller's, so anything exposed through the API
+would read with owner rights and step around row-level security. Supabase's advisor raises the
+omission as critical, and it did here.
 
 ### What this build cannot report
 
