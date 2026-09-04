@@ -437,10 +437,19 @@ create table if not exists outbound_companies_scored (
     window_start            date,
     window_end              date,
 
-    -- post-Clay
+    -- post-Clay. Domain comes from Claygent alone: the Find Work Email
+    -- waterfall also emits one, and where the two disagreed it was the
+    -- waterfall that was wrong every time, offering the filing agent's law
+    -- firm or a data vendor.
     domain                  text,
     work_email              text,
     copy_body               text,
+    subject                 text,
+    contact_title           text,
+    copy_signal             text,
+    copy_observation        text,
+    copy_features           text,
+    relationship_manager    boolean,
     clay_row_id             text,
     sent_to_clay_at         timestamptz,
     returned_from_clay_at   timestamptz,
@@ -459,6 +468,18 @@ create table if not exists outbound_companies_scored (
     collapsed_into_cik      bigint,
     also_signed_for         text[],
 
+    -- CRM. Supabase owns the state and Pipedrive mirrors it, so every id is
+    -- written back the moment that object exists and a run that dies halfway
+    -- resumes instead of creating a second set of objects.
+    pipedrive_org_id        bigint,
+    pipedrive_person_id     bigint,
+    pipedrive_deal_id       bigint,
+    pipedrive_synced_at     timestamptz,
+    sent_at                 timestamptz,
+    replied_at              timestamptz,
+    held_until              date,
+    crm_stage               text,
+
     is_test_row             boolean not null default false,
     scored_at               timestamptz not null default now(),
 
@@ -472,7 +493,10 @@ create table if not exists outbound_companies_scored (
                                  'dupe_existing_customer', 'dupe_inbound',
                                  'dupe_same_signer', 'dupe_already_emailed')),
     constraint scored_dedupe_matched_on_chk
-        check (dedupe_matched_on is null or dedupe_matched_on in ('domain', 'phone'))
+        check (dedupe_matched_on is null or dedupe_matched_on in ('domain', 'phone')),
+    constraint scored_crm_stage_chk
+        check (crm_stage is null or crm_stage in
+               ('enriched', 'emailed', 'replied', 'held', 'closed_won', 'closed_lost'))
 );
 
 create index if not exists scored_score_idx  on outbound_companies_scored (score desc);

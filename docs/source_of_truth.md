@@ -46,6 +46,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 32 | 2026-09-03 | The copy rule invented in `CLAUDE.md` is deleted. Copy is governed only by **Enrichment and copy** in this document. `CLAUDE.md` holds process rules and no product facts, by its own opening line, and that bullet was a pipeline mechanism this document never states | `An LLM writes only the single relevance sentence` |
 | 33 | 2026-09-04 | Copy is written by Claygent from a signal on the company's **own** site, paired with what that signal means for their money, and never from the funding round. The signal picks two Mercury features from a fixed list of five; the fifth is added at $250,000 and over of amount sold. Peer names are not cited: 38 of the 50 live rows are `Other Technology`, so the cluster's named customers failed the genuineness test far more often than they passed. The prompt is versioned at `prompts/claygent_copy.md` | `seeded competitor use cases` |
 | 34 | 2026-09-04 | The CRM model is settled and built: Organization, Person and Deal; six stages; eleven custom fields. Nothing is superseded, because the original never named an object, a stage or a field. Verified against the live account by `scripts/09_pipedrive_probe.py` and archived at `docs/sources/pipedrive_fields_2026-09-04.md` | |
+| 35 | 2026-09-04 | Domain comes from Claygent alone. The Find Work Email waterfall also emits one; on the 16 resolved rows the two disagreed five times and the waterfall was wrong every time, offering the filing agent's law firm, a data vendor or yahoo.com. It adds no coverage Claygent did not already have, so it is not read | |
 
 ---
 
@@ -561,6 +562,29 @@ $300,000 prospect.
 
 The prompt is versioned at `prompts/claygent_copy.md` and is the authority on its own wording.
 
+### What Clay actually returned
+
+Measured 2026-09-04 on the 50 rows sent, by `scripts/07_import_clay_results.py`:
+
+| | Rows |
+|---|---|
+| Domain resolved | 16 |
+| Validated work email | 13 |
+| Copy written | 8 |
+
+The eight with copy are the demo set. The 34 rows with nothing back are left `pending`, not
+`enrich_no_domain`: the free tier ran out before Clay reached them, and calling an unreached row a
+resolution failure would claim a measurement that was never taken.
+
+**The domain is Claygent's, not the waterfall's.** Find Work Email emits a domain of its own, and
+where the two disagreed, on five of the sixteen, the waterfall was wrong every time: it offered
+`polsinelli.com` for Tabnam, which is the law firm that filed for them, `preqin.com` for Gnau, which
+is a data vendor, and `yahoo.com` for Libertystream. Claygent resolved all sixteen unaided, so the
+waterfall's domain adds no coverage and only offers filing agents.
+
+`contact_name` is rewritten on import from Clay's split column and the title it dropped lands in
+`contact_title`, which is where it should have been written in the first place.
+
 Rows Clay cannot resolve do not disappear. They are flagged `enrich_no_domain` or
 `enrich_no_work_email` and counted in the funnel. Contactability is settled here, upstream of the
 sender: a row only becomes dispatchable when it has a verified email.
@@ -575,6 +599,28 @@ The dedupe runs **after Clay has returned**, because it joins on domain and doma
 Clay has resolved it. Both checks are joins in SQL, on normalised apex domain, with phone as a
 secondary check. Neither table carries a CIK: it is not needed, and a real Mercury customer list would
 not have one. Removals are flagged `dupe_existing_customer` or `dupe_inbound` and counted.
+
+### The demo seeds
+
+The three dedupe targets start empty, so the codes cannot fire and their rates would be guesses. Run
+by `scripts/08_dedupe.py --seed`, from the eight rows that have copy, so each code is measured against
+a candidate that was otherwise going out:
+
+| Seed | Table | Fires |
+|---|---|---|
+| `atoms.co` | `existing_mercury_customers` | `dupe_existing_customer` |
+| `qualitate.io` | `mercury_inbound` | `dupe_inbound` |
+| `delphiinteractive.com` | `contacted_emails` | `dupe_already_emailed` |
+
+Each fired on exactly one row. The rate is recorded in `reason_codes` as seeded rather than natural,
+because at eight companies a genuine collision would not occur and reporting one would be a lie.
+
+`coderabbit.ai` and `blacksmith.sh` become the test rows, their addresses replaced by `TEST_EMAIL`.
+The replacement is destructive on purpose: a real address kept beside a test flag is an address that
+can still be sent to.
+
+That leaves **five dispatchable rows**: two test rows that send, and three real companies that stop
+at Enriched with a drafted email and a task.
 
 Only after the dedupe does n8n fill the CRM and send the emails to test rows.
 
