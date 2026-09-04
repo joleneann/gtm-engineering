@@ -607,76 +607,170 @@ create table if not exists contacted_emails (
 -- 6. VIEWS
 -- ---------------------------------------------------------------------
 
--- Where every company went, ingest to an email that could actually be sent.
+-- Where every company went, from the day EDGAR handed it over to an email that
+-- could actually be sent.
 --
--- Corrected 2026-09-04. The previous version lost 814 of 830 scored companies
--- and overstated the last stage. It counted the unenriched as
--- not_selected / enrich_no_domain / enrich_no_work_email, and no script ever
--- writes not_selected: 780 companies were never sent to Clay because only 50
--- fit the free tier, and 34 were sent but Clay ran out of credits first. All
--- 814 are still 'pending' and matched no line, so they were counted nowhere.
--- It also called 10 rows dispatchable on enrichment and dedupe alone, when 5 of
--- them had a verified address and no copy, so nothing could be sent to them.
+-- COMPANIES, never filings. One company files more than one Form D; Databricks
+-- filed two on a single day. The question this build asks is how many
+-- businesses could be emailed, so a company is the unit and it is counted once.
 --
--- Two stages are named for what actually happened rather than for a status:
--- never_sent_to_clay is a budget boundary, not a resolution failure, and
--- has_copy is the only count from which an email can leave.
+-- A company reaching two gates is counted at the FURTHEST one. Three companies
+-- have one filing routed out as a fund and another that scored, and two are
+-- parked on one filing and scored on another. If any filing survived, the
+-- company survived. First-gate-wins would hide five contactable companies.
 --
--- never_sent_to_clay excludes the same-signer rows. They are 'pending' too,
--- so counting every pending row put them in two stages at once and the
--- funnel added to 860 against 830 scored. A stage a company can be in twice
--- is not a funnel.
+-- Every row names the population it is a share of, in `level`. Rows within a
+-- level add to that level's base exactly, and levels never add across, which is
+-- the thing the previous version gave a reader no way to see.
+--
+-- Rebuilt 2026-09-04 by db/migration_007_funnel_companies.sql, which lists what
+-- was wrong with the version before it: mixed units, a 95-company double count,
+-- a top block adding to 3,510 against an ingested 3,512, and 34 companies that
+-- went to Clay reported as never sent.
+--
+-- The sent level depends on sent_to_clay_at, filled by
+-- scripts/14_backfill_sent_to_clay.py. Without it every scored row reads as
+-- never sent.
 create or replace view v_funnel with (security_invoker = on) as
-with stages as (
-  select  1 as seq, 'ingested' as stage, null::text as reason_code,
-          (select count(*) from filings_raw where is_primary_issuer) as companies
+with base as (
+  -- Every company EDGAR gave us, from every filing row: primary issuers,
+  -- co-issuers, and the prior filings pulled for the 12-month rollup.
+  select distinct cik from filings_raw
+),
+placed as (
+  select b.cik,
+         case
+           when s.cik is not null then 6
+           when p.cik is not null then 5
+           when u.cik is not null and u.jurisdiction_fail then 3
+           when u.cik is not null then 4
+           when f.cik is not null then 2
+           else 99
+         end as gate
+    from base b
+    left join (select distinct cik from outbound_companies_scored) s on s.cik = b.cik
+    left join (select distinct cik from no_industry_companies)     p on p.cik = b.cik
+    left join likely_unserviceable_companies                       u on u.cik = b.cik
+    left join (select distinct cik from formd_funds)               f on f.cik = b.cik
+),
+n as (
+  select (select count(*) from base)                                     as ingested,
+         (select count(*) from outbound_companies_scored)                as scored,
+         (select count(*) from outbound_companies_scored
+           where sent_to_clay_at is not null)                            as sent,
+         (select count(*) from outbound_companies_scored
+           where enrichment_status = 'enriched')                         as enriched,
+         (select count(*) from outbound_companies_scored
+           where enrichment_status = 'enriched'
+             and dedupe_status = 'unique')                               as survived_dedupe
+),
+stages as (
+  -- LEVEL 1: every company, counted once, at the furthest gate it reached.
+  select  1 as seq, 'all companies' as level, 'ingested' as stage,
+          null::text as reason_code, (select ingested from n) as companies,
+          (select ingested from n) as level_base
   union all
-  select  2, 'routed_out', reason_code, count(*)
-    from  formd_funds group by reason_code
+  select  2, 'all companies', 'routed_out', 'scope_pooled_investment_fund',
+          count(*), (select ingested from n) from placed where gate = 2
   union all
-  select  3, 'routed_out', 'scope_non_us_incorporation', count(*)
-    from  likely_unserviceable_companies where jurisdiction_fail
+  select  3, 'all companies', 'routed_out', 'scope_non_us_incorporation',
+          count(*), (select ingested from n) from placed where gate = 3
   union all
-  select  4, 'routed_out', 'scope_unsupported_country', count(*)
-    from  likely_unserviceable_companies where address_fail
+  select  4, 'all companies', 'routed_out', 'scope_unsupported_country',
+          count(*), (select ingested from n) from placed where gate = 4
   union all
-  select  5, 'parked', reason_code, count(*)
-    from  no_industry_companies group by reason_code
+  select  5, 'all companies', 'parked', 'scope_industry_other',
+          count(*), (select ingested from n) from placed where gate = 5
   union all
-  select  6, 'scored', null, (select count(*) from outbound_companies_scored)
+  select  6, 'all companies', 'scored', null,
+          count(*), (select ingested from n) from placed where gate = 6
+
+  -- LEVEL 2: what happened to the scored. Adds to the scored count.
   union all
-  select  7, 'held_back', 'dupe_same_signer', count(*)
-    from  outbound_companies_scored where dedupe_status = 'dupe_same_signer'
-  union all
-  select  8, 'never_sent_to_clay', 'free_tier_row_cap', count(*)
+  select  7, 'of the scored', 'held_back', 'dupe_same_signer',
+          count(*), (select scored from n)
     from  outbound_companies_scored
-   where  enrichment_status = 'pending'
+   where  dedupe_status = 'dupe_same_signer'
+  union all
+  select  8, 'of the scored', 'never_sent_to_clay', 'free_tier_row_cap',
+          count(*), (select scored from n)
+    from  outbound_companies_scored
+   where  sent_to_clay_at is null
      and  dedupe_status <> 'dupe_same_signer'
   union all
-  select  9, 'enrich_failed', enrichment_status, count(*)
+  select  9, 'of the scored', 'sent_to_clay', null,
+          count(*), (select scored from n)
     from  outbound_companies_scored
-   where  enrichment_status in ('not_selected', 'enrich_no_domain', 'enrich_no_work_email')
+   where  sent_to_clay_at is not null
+
+  -- LEVEL 3: what Clay returned. Adds to the sent count.
+  union all
+  select 10, 'of those sent to Clay', 'no_return', 'clay_credits_exhausted',
+          count(*), (select sent from n)
+    from  outbound_companies_scored
+   where  sent_to_clay_at is not null
+     and  returned_from_clay_at is null
+  union all
+  select 11, 'of those sent to Clay', 'enrich_failed', enrichment_status,
+          count(*), (select sent from n)
+    from  outbound_companies_scored
+   where  sent_to_clay_at is not null
+     and  enrichment_status in ('enrich_no_domain', 'enrich_no_work_email')
    group  by enrichment_status
   union all
-  select 10, 'enriched', null, count(*)
-    from  outbound_companies_scored where enrichment_status = 'enriched'
-  union all
-  select 11, 'removed', dedupe_status, count(*)
+  select 12, 'of those sent to Clay', 'enriched', null,
+          count(*), (select sent from n)
     from  outbound_companies_scored
-   where  dedupe_status in ('dupe_existing_customer', 'dupe_inbound', 'dupe_already_emailed')
+   where  sent_to_clay_at is not null
+     and  enrichment_status = 'enriched'
+
+  -- LEVEL 4: the dedupe. Adds to the enriched count.
+  union all
+  select 13, 'of the enriched', 'removed', dedupe_status,
+          count(*), (select enriched from n)
+    from  outbound_companies_scored
+   where  enrichment_status = 'enriched'
+     and  dedupe_status in ('dupe_existing_customer', 'dupe_inbound', 'dupe_already_emailed')
    group  by dedupe_status
   union all
-  select 12, 'has_copy', null, count(*)
+  select 14, 'of the enriched', 'survived_dedupe', null,
+          count(*), (select enriched from n)
+    from  outbound_companies_scored
+   where  enrichment_status = 'enriched'
+     and  dedupe_status = 'unique'
+
+  -- LEVEL 5: copy is what makes a row sendable. Adds to the survivor count.
+  union all
+  select 15, 'of those that survived dedupe', 'has_copy', null,
+          count(*), (select survived_dedupe from n)
     from  outbound_companies_scored
    where  enrichment_status = 'enriched'
      and  dedupe_status = 'unique'
      and  copy_body is not null
+  union all
+  select 16, 'of those that survived dedupe', 'no_copy', 'clay_credits_exhausted',
+          count(*), (select survived_dedupe from n)
+    from  outbound_companies_scored
+   where  enrichment_status = 'enriched'
+     and  dedupe_status = 'unique'
+     and  copy_body is null
 )
-select  seq, stage, reason_code, companies,
-        round(100.0 * companies
-              / nullif(first_value(companies) over (order by seq), 0), 2) as pct_of_ingested
-  from  stages
- order  by seq, reason_code;
+select seq,
+       level,
+       stage,
+       reason_code,
+       companies,
+       round(100.0 * companies / nullif(level_base, 0), 2) as pct_of_level,
+       round(100.0 * companies / nullif((select ingested from n), 0), 2) as pct_of_ingested
+  from stages
+ where companies > 0
+ order by seq, reason_code;
+
+
+comment on view v_funnel is
+'Companies, never filings, counted once each at the furthest gate they reached. '
+'Rows within one level add to that level base exactly; levels never add across. '
+'Rebuilt 2026-09-04: see db/migration_007_funnel_companies.sql for what was wrong.';
 
 
 -- Every stage a company reaches once it is in the CRM.

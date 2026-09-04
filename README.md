@@ -17,25 +17,31 @@ version and defers to it wherever the two could be read differently.
 
 ## What it did, measured 2026-09-04
 
-Twenty days of filings, read from `v_funnel`:
+Twenty days of filings, read from `v_funnel`. **Companies, counted once each**, at the furthest gate
+they reached. Each block adds to its own base; the blocks never add across:
 
-| Stage | Reason | Companies | % of ingested |
+| Of | Stage | Reason | Companies |
 |---|---|---|---|
-| ingested | | 3,512 | 100 |
-| routed out | `scope_pooled_investment_fund` | 1,996 | 56.83 |
-| routed out | `scope_non_us_incorporation` | 232 | 6.61 |
-| routed out | `scope_unsupported_country` | 106 | 3.02 |
-| parked | `scope_industry_other` | 346 | 9.85 |
-| **scored** | | **830** | **23.63** |
-| held back | `dupe_same_signer` | 30 | 0.85 |
-| never sent to Clay | `free_tier_row_cap` | 784 | 22.32 |
-| enrichment failed | `enrich_no_work_email` | 3 | 0.09 |
-| enriched | | 13 | 0.37 |
-| removed | the three dedupe codes | 1 each | 0.03 each |
-| **has copy** | | **5** | **0.14** |
+| **all 2,953 companies** | ingested | | 2,953 |
+| | routed out | `scope_pooled_investment_fund` | 1,664 |
+| | routed out | `scope_non_us_incorporation` | 232 |
+| | routed out | `scope_unsupported_country` | 11 |
+| | parked | `scope_industry_other` | 216 |
+| | **scored** | | **830** |
+| **the 830 scored** | held back | `dupe_same_signer` | 30 |
+| | never sent to Clay | `free_tier_row_cap` | 750 |
+| | **sent to Clay** | | **50** |
+| **the 50 sent** | came back empty | `clay_credits_exhausted` | 34 |
+| | no work email | `enrich_no_work_email` | 3 |
+| | **enriched** | | **13** |
+| **the 13 enriched** | removed | the three dedupe codes | 1 each |
+| | **survived dedupe** | | **10** |
+| **the 10 survivors** | **has copy, so sendable** | | **5** |
+| | no copy | `clay_credits_exhausted` | 5 |
 
-The stages after `scored` add to 830 exactly: 30 + 784 + 3 + 13. Nothing is deleted anywhere in the
-pipeline; every company that leaves carries the code that removed it.
+Nothing is deleted anywhere in the pipeline; every company that leaves carries the code that removed
+it. `scope_unsupported_country` is 11 rather than 106 because 95 of those companies had already failed
+on incorporation, and a company removed twice is a company counted twice.
 
 The CRM leg, read from `v_outreach`:
 
@@ -91,6 +97,7 @@ Enriched with the drafted subject and body attached to a Pipedrive task, for a h
 | `04_score.py` | `outbound_companies_unscored` and friends | `outbound_companies_scored`, one row per company, payload included |
 | `05_collapse_signers.py` | `outbound_companies_unscored`, `outbound_companies_scored` | `signer_list`, and marks `dupe_same_signer` |
 | `06_export_clay_csv.py` | `outbound_companies_scored` | `exports/clay_payload_<date>.csv`, plus a 200-row file for the free tier |
+| `14_backfill_sent_to_clay.py` | the uploaded export | `sent_to_clay_at`, so the funnel can tell "never sent" from "sent, came back empty" |
 | `07_import_clay_results.py` | `exports/clay_payload-enriched.csv` | `outbound_companies_scored`: domain, email, subject, copy, status |
 | `08_dedupe.py` | the enriched rows, the three target tables | dedupe status; `--seed` writes the demo rows the codes need |
 | `09_pipedrive_probe.py` | Pipedrive, read-only | `docs/sources/pipedrive_fields_<date>.md`: the 40-character field keys |
@@ -131,6 +138,7 @@ py -3 scripts/04_score.py
 py -3 scripts/05_collapse_signers.py
 py -3 scripts/06_export_clay_csv.py
 # upload the CSV to Clay, run the table, export the result to exports/
+py -3 scripts/14_backfill_sent_to_clay.py
 py -3 scripts/07_import_clay_results.py
 py -3 scripts/08_dedupe.py --seed && py -3 scripts/08_dedupe.py
 ./run_n8n.sh    # then press Execute on GTME 1, reply to the mail, Execute on GTME 2
@@ -142,9 +150,10 @@ and never through MCP. Supabase MCP is read-only and for inspection.
 
 ## The rules this build holds itself to
 
-- **Budget is $0.** Nothing here requires payment. Clay's free tier is the binding constraint and it
-  is where 784 companies stopped, which is recorded as a budget boundary rather than dressed up as an
-  enrichment failure.
+- **Budget is $0.** Nothing here requires payment. Clay's free tier is the binding constraint, and it
+  stopped three separate populations: 750 never uploaded, 34 uploaded and returned empty, 5 returned
+  without copy. Each is recorded as the budget boundary it is rather than dressed up as an enrichment
+  failure.
 - **Nothing is ever sent to a real company.** Enforced by a node that fails the run, not by
   convention.
 - **A decision is not made until it is written.** `scripts/00_doc_check.py` reads every live document

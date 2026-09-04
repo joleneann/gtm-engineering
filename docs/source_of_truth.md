@@ -54,6 +54,7 @@ dispatchable` |
 | 39 | 2026-09-04 | `enrich_no_domain` is a measured zero, not a status any row carries. The import writes `enrich_no_work_email` where a domain resolved and no address survived, and leaves a row Clay never reached at `pending`. The old sentence contradicted this document's own funnel section two pages later | `flagged enrich_no_domain or` |
 | 40 | 2026-09-04 | `README.md` added: a short version of this document for someone opening the repository, and read in full by `scripts/00_doc_check.py` like everything under `docs/`, so it cannot drift away from this one | |
 | 41 | 2026-09-04 | The fund gate's justification is rewritten to what Form D actually says. Item 13 states the sold amount includes "cash to be paid in the future under mandatory capital commitments", and a capital call needs no new filing, which is enough on its own. The drawdown period was never on the form, and the instruction is not fund-specific: it binds any issuer with a mandatory future payment. The same sentence is corrected in the analysis section of `docs/sources/mercury_vc_funds_2026-08-28.md`; the captured text in that file is untouched | `committed capital drawn down over years` |
+| 42 | 2026-09-04 | `v_funnel` counts companies throughout, one row per company at the furthest gate it reached, and every row names the population it is a share of. The version before it put filings and companies under one column called companies, counted the 95 companies failing both servicability tests twice, and reported 34 companies that went to Clay as never sent. `sent_to_clay_at` had never been written to, so the view could not tell a company Clay never saw from one that returned nothing; `scripts/14_backfill_sent_to_clay.py` fills it from the uploaded export. In `db/migration_007_funnel_companies.sql` | `30 + 784 + 3 + 13` |
 
 ---
 
@@ -757,34 +758,58 @@ view, because spend is $0 and there is no cost table; one would report zeros and
 
 ### v_funnel
 
-Every stage from ingest to an email that could actually be sent, with each stage as a percentage of
-ingested. Measured 2026-09-04:
+**Companies, never filings, counted once each.** One company files more than one Form D: Databricks
+filed two on a single day. The question this build asks is how many businesses could be emailed, so
+the company is the unit and the base is every distinct CIK EDGAR handed over, 2,953.
 
-| Stage | Reason | Companies | % of ingested |
-|---|---|---|---|
-| ingested | | 3,512 | 100 |
-| routed_out | `scope_pooled_investment_fund` | 1,996 | 56.83 |
-| routed_out | `scope_non_us_incorporation` | 232 | 6.61 |
-| routed_out | `scope_unsupported_country` | 106 | 3.02 |
-| parked | `scope_industry_other` | 346 | 9.85 |
-| scored | | 830 | 23.63 |
-| held_back | `dupe_same_signer` | 30 | 0.85 |
-| never_sent_to_clay | `free_tier_row_cap` | 784 | |
-| enrich_failed | `enrich_no_work_email` | 3 | 0.09 |
-| enriched | | 13 | 0.37 |
-| removed | the three dedupe codes | 1 each | |
-| has_copy | | 5 | 0.14 |
+A company reaching two gates is counted at the **furthest** one. Three companies have one filing
+routed out as a fund and another that scored; two are parked on one filing and scored on another. If
+any filing survived, the company survived. Counting them at the first gate would hide five companies
+that are genuinely contactable.
 
-The stages after `scored` add to 830 exactly: 30 + 784 + 3 + 13.
+**Every row names the population it is a share of.** Rows inside one level add to that level's base
+exactly, and levels never add across. Measured 2026-09-04:
 
-Two stages are named for what happened rather than for a status. **`never_sent_to_clay` is a budget
-boundary, not a resolution failure**: 780 companies never fitted the free tier and 34 were sent but
-Clay ran out of credits first. Calling them `enrich_no_domain` would claim a measurement nobody took.
-**`has_copy` replaces dispatchable**, because enrichment and dedupe alone say a row has an address,
-not that there is anything to send to it.
+| Level | Stage | Reason | Companies | % of level |
+|---|---|---|---|---|
+| all companies | ingested | | 2,953 | 100 |
+| all companies | routed_out | `scope_pooled_investment_fund` | 1,664 | 56.35 |
+| all companies | routed_out | `scope_non_us_incorporation` | 232 | 7.86 |
+| all companies | routed_out | `scope_unsupported_country` | 11 | 0.37 |
+| all companies | parked | `scope_industry_other` | 216 | 7.31 |
+| all companies | **scored** | | **830** | 28.11 |
+| of the scored | held_back | `dupe_same_signer` | 30 | 3.61 |
+| of the scored | never_sent_to_clay | `free_tier_row_cap` | 750 | 90.36 |
+| of the scored | **sent_to_clay** | | **50** | 6.02 |
+| of those sent to Clay | no_return | `clay_credits_exhausted` | 34 | 68.00 |
+| of those sent to Clay | enrich_failed | `enrich_no_work_email` | 3 | 6.00 |
+| of those sent to Clay | **enriched** | | **13** | 26.00 |
+| of the enriched | removed | the three dedupe codes | 1 each | 7.69 each |
+| of the enriched | **survived_dedupe** | | **10** | 76.92 |
+| of those that survived dedupe | **has_copy** | | **5** | 50.00 |
+| of those that survived dedupe | no_copy | `clay_credits_exhausted` | 5 | 50.00 |
 
-`never_sent_to_clay` excludes the same-signer rows, which are also `pending`. Counting every pending
-row put them in two stages at once and the funnel added to 860 against 830 scored.
+Each level reconciles: 1,664 + 232 + 11 + 216 + 830 = 2,953. 30 + 750 + 50 = 830. 34 + 3 + 13 = 50.
+3 + 10 = 13. 5 + 5 = 10.
+
+**`scope_unsupported_country` is 11, not 106.** 106 companies fail the address test, but 95 of them
+already failed on incorporation, and a company removed twice is a company counted twice. The 11 are
+those the address test removed on its own, which is the only number that says what that test is worth.
+
+**Two of the three Clay outcomes are the free tier, and they are not the same outcome.** 750 companies
+were never uploaded, because the free table holds 200 rows and 50 were sent. 34 were uploaded and came
+back empty, because the credits ran out mid-run. A further 5 came back with a domain and an address
+and no copy, for the same reason. Calling any of them an enrichment failure would report a
+measurement nobody took: Clay never formed a judgement about those companies.
+
+**`has_copy` is the only count an email can leave from.** Enrichment and dedupe together say a row has
+a reachable address, not that there is anything to send to it.
+
+**Nothing was ever written into `sent_to_clay_at` until `scripts/14_backfill_sent_to_clay.py`**, so
+the view could not tell a company Clay never saw from one Clay saw and returned nothing for, and
+called all 784 of them never sent. The column is filled from the export that was uploaded, whose 50
+CIKs are identical to the set that came back, which is what proves it is the file that went. The
+timestamp is that export's own date and not the day the backfill ran.
 
 ### v_outreach
 
