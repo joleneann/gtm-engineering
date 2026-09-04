@@ -93,9 +93,6 @@ Budget is **$0**. Nothing here requires payment.
 - **No human review queue.** Where a judgement was previously deferred to a person, the system decides
   and the decision is counted. Ambiguity is dropped rather than guessed, because emailing the wrong
   company is worse than sending nothing.
-- **Facts in outbound copy are substituted from the row, never written by a model.** A substitution
-  cannot be wrong, so it needs no downstream check. An LLM writes only the single relevance sentence,
-  from that row's fields, forbidden to introduce anything else. Constrain the prompt first.
 - Partial writes must be resumable: write back an id the moment the record exists.
 
 ## Secrets and data

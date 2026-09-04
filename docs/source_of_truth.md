@@ -43,6 +43,8 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 29 | 2026-09-03 | Phones ship as digits only with the country code first and no plus sign, because a plus asserts a country code we can only verify for US numbers and would turn the one malformed value into a confident claim about the wrong country | `E.164 for US numbers` |
 | 30 | 2026-09-03 | Block capitals are calmed per comma-separated segment, so acronyms inside mixed-case text survive. Measured: 20 fields keep a capitalised word and every one is a genuine acronym | |
 | 31 | 2026-09-03 | Calming and phone formatting move from the export into `04_score.py`, so the payload table holds them and every consumer inherits them. n8n reads that table rather than the CSV, and the phone dedupe joins on it. Measured: 0 of 830 addresses left in capitals, against 662 before. Job-title acronyms added to the keep-uppercase list after 98 contacts read `Ceo` | `Block capitals are calmed on export` |
+| 32 | 2026-09-03 | The copy rule invented in `CLAUDE.md` is deleted. Copy is governed only by **Enrichment and copy** in this document. `CLAUDE.md` holds process rules and no product facts, by its own opening line, and that bullet was a pipeline mechanism this document never states | `An LLM writes only the single relevance sentence` |
+| 33 | 2026-09-04 | Copy is written by Claygent from a signal on the company's **own** site, paired with what that signal means for their money, and never from the funding round. The signal picks two Mercury features from a fixed list of five; the fifth is added at $250,000 and over of amount sold. Peer names are not cited: 38 of the 50 live rows are `Other Technology`, so the cluster's named customers failed the genuineness test far more often than they passed. The prompt is versioned at `prompts/claygent_copy.md` | `seeded competitor use cases` |
 
 ---
 
@@ -330,9 +332,11 @@ The 34th code on the form, `Other`, is not scored: those companies are parked in
 matched to the SEC's industry groups. A company belonging to an industry group which is Mercury's
 highest-return group will score higher.
 
-Micro-segmentation by industry also allows for better copy by citing specific competitor use cases.
 The clusters and the named Mercury customers per cluster live in `industry_clusters`, from the table
-reproduced at `docs/industry_clusters.png`:
+reproduced at `docs/industry_clusters.png`. The named customers were seeded to let the copy cite a
+recognisable peer, and the copy does not use them: on the live 50 rows, 38 are `Other Technology`, so
+the peer offered is almost always a company the prospect has no reason to feel kin to, and Claygent
+was right to refuse it. The table stays as the industry map:
 
 | Cluster | Form D codes | Named on Mercury's site |
 |---|---|---|
@@ -532,10 +536,29 @@ shared filing agent from a company that simply files often.
 
 ## Enrichment and copy
 
-Clay resolves each surviving company to a domain, a work email, and the copy. Copy is written on
-benefits for each expected balance range mapped to Mercury benefits by band, plus seeded competitor
-use cases, employer and employee benefits, and directed to a demo or relationship manager above $10M
-expected balance.
+Clay resolves each surviving company to a domain, a work email, and the copy.
+
+The domain and the copy are Claygent; the email is Clay's native Find Work Email waterfall, which
+includes validation. `contact_name` is split to a first-name-only column before it reaches the
+waterfall, because the scored table stores it as `Name, Title` and the waterfall reads it as a full
+name. Where `contact_name` is empty, the first person in `people` whose roles include
+`Executive Officer` is used instead; a row with neither routes out.
+
+Copy opens on one signal read off the company's **own** site, paired in the same sentence with what
+that signal means for their money. The funding round is never mentioned: every email in the campaign
+would otherwise open the same way. Claygent takes the first of seven signals it finds, in this order:
+multiple sites or locations, named enterprise customers, open roles, operations outside the US, a
+pricing page, hardware or inventory or freight, contractors or franchisees. Finding none is a normal
+outcome and the email opens on the features instead.
+
+The signal then picks two of five Mercury benefits, so the benefit answers the thing observed rather
+than being chosen at random. Amount sold is the expected balance and bands the rest: at $250,000 and
+over a third benefit is added, Mercury Treasury; at $10M and over the email offers a named
+relationship manager. Every row, at every band, gets the demo link. No yield figure is ever quoted,
+because Mercury's headline rate is its ceiling for balances over $20M and does not describe a
+$300,000 prospect.
+
+The prompt is versioned at `prompts/claygent_copy.md` and is the authority on its own wording.
 
 Rows Clay cannot resolve do not disappear. They are flagged `enrich_no_domain` or
 `enrich_no_work_email` and counted in the funnel. Contactability is settled here, upstream of the
