@@ -55,6 +55,7 @@ dispatchable` |
 | 40 | 2026-09-04 | `README.md` added: a short version of this document for someone opening the repository, and read in full by `scripts/00_doc_check.py` like everything under `docs/`, so it cannot drift away from this one | |
 | 41 | 2026-09-04 | The fund gate's justification is rewritten to what Form D actually says. Item 13 states the sold amount includes "cash to be paid in the future under mandatory capital commitments", and a capital call needs no new filing, which is enough on its own. The drawdown period was never on the form, and the instruction is not fund-specific: it binds any issuer with a mandatory future payment. The same sentence is corrected in the analysis section of `docs/sources/mercury_vc_funds_2026-08-28.md`; the captured text in that file is untouched | `committed capital drawn down over years` |
 | 42 | 2026-09-04 | `v_funnel` counts companies throughout, one row per company at the furthest gate it reached, and every row names the population it is a share of. The version before it put filings and companies under one column called companies, counted the 95 companies failing both servicability tests twice, and reported 34 companies that went to Clay as never sent. `sent_to_clay_at` had never been written to, so the view could not tell a company Clay never saw from one that returned nothing; `scripts/14_backfill_sent_to_clay.py` fills it from the uploaded export. In `db/migration_007_funnel_companies.sql` | `30 + 784 + 3 + 13` |
+| 43 | 2026-09-04 | The multi-filing rollup paragraph is rewritten in plain sentences. No fact changes and nothing is withdrawn: it made three points, that a re-filing company re-enters on purpose, that contactability is settled at the dedupe rather than here, and that held, closed and lost need no code of their own, and it made them in two sentences nobody could read | |
 
 ---
 
@@ -258,20 +259,28 @@ build. Dedupe on the fingerprint of the offering itself (`totalOfferingAmount`, 
 Both amounts are added: `totalAmountSold` and `totalRemaining`. Non-amount fields (industry, contact,
 related persons, filing date) come from the newest filing.
 
-**Adding filings up over 12 months never means a company already dealt with is emailed again.** A
-company that files again re-enters the pipeline by design, because a fresh raise is a fresh trigger,
-but whether it is still contactable is settled downstream, not here: the dedupe removes any row whose
-apex domain matches `existing_mercury_customers` or `mercury_inbound`, flagged
-`dupe_existing_customer` or `dupe_inbound` and counted in the funnel. **A company that becomes a
-customer, or is held, closed or lost, is removed on that same join**, because in production those
-tables are CRM-populated and carry every one of those outcomes. In this build they are the seeded
-demo rows, so the held, closed and lost outcomes have no rows to fire on and get no reason code of
-their own: a code that cannot occur at this volume is padding.
+**Adding filings up never causes someone to be emailed twice.**
 
-This is not an edge case. Measured on 2026-08-27: three CIKs filed more than one Form D that day, and
-they were the large ones, Databricks at $241M and $5.00B. Nonlinear Materials filed five Form Ds on a
-single day in 2025. Measured across the 20-day window: 113 of 830 surviving companies roll up more than
-one filing, the largest being a note-issuing vehicle with 27.
+A company that raises again comes back into the pipeline. That is deliberate: a new raise is a new
+reason to write to them.
+
+Whether we are allowed to write to them is decided later, at the dedupe step, not here. That step
+matches the company's domain against two tables, `existing_mercury_customers` and `mercury_inbound`.
+A match removes the row, flags it `dupe_existing_customer` or `dupe_inbound`, and counts it in the
+funnel.
+
+In production those two tables come from the CRM. They therefore also hold the companies a rep has
+put on hold, closed as won, or closed as lost, and the same domain match removes those. No extra
+codes are needed for them.
+
+In this build both tables are seeded demo rows, so on hold, closed and lost cannot occur at all.
+They get no reason code, because a code for something that cannot happen is padding.
+
+**Several filings from one company is common, not an edge case.** On 2026-08-27, three companies each
+filed more than one Form D that day, and they were the big ones: Databricks filed at $241M and again
+at $5.00B. Nonlinear Materials filed five in a single day in 2025. Across the 20-day window, 113 of
+the 830 surviving companies have more than one filing added together, and the largest is a
+note-issuing vehicle with 27.
 
 ### Total Remaining, 1 point
 
