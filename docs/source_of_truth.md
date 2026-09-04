@@ -45,6 +45,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 31 | 2026-09-03 | Calming and phone formatting move from the export into `04_score.py`, so the payload table holds them and every consumer inherits them. n8n reads that table rather than the CSV, and the phone dedupe joins on it. Measured: 0 of 830 addresses left in capitals, against 662 before. Job-title acronyms added to the keep-uppercase list after 98 contacts read `Ceo` | `Block capitals are calmed on export` |
 | 32 | 2026-09-03 | The copy rule invented in `CLAUDE.md` is deleted. Copy is governed only by **Enrichment and copy** in this document. `CLAUDE.md` holds process rules and no product facts, by its own opening line, and that bullet was a pipeline mechanism this document never states | `An LLM writes only the single relevance sentence` |
 | 33 | 2026-09-04 | Copy is written by Claygent from a signal on the company's **own** site, paired with what that signal means for their money, and never from the funding round. The signal picks two Mercury features from a fixed list of five; the fifth is added at $250,000 and over of amount sold. Peer names are not cited: 38 of the 50 live rows are `Other Technology`, so the cluster's named customers failed the genuineness test far more often than they passed. The prompt is versioned at `prompts/claygent_copy.md` | `seeded competitor use cases` |
+| 34 | 2026-09-04 | The CRM model is settled and built: Organization, Person and Deal; six stages; eleven custom fields. Nothing is superseded, because the original never named an object, a stage or a field. Verified against the live account by `scripts/09_pipedrive_probe.py` and archived at `docs/sources/pipedrive_fields_2026-09-04.md` | |
 
 ---
 
@@ -581,6 +582,46 @@ Only after the dedupe does n8n fill the CRM and send the emails to test rows.
 
 n8n takes the enriched companies and logs all of them to Pipedrive. It sends only to the seeded test
 rows, catches the reply, and moves the deal's pipeline stage in Pipedrive to match.
+
+### The objects
+
+Three, which is Pipedrive's native shape: **Organization** is the company, **Person** is the human
+who gets the email, **Deal** is the raise. The split is what makes a second raise cheap: a company
+that files again is matched to its existing Organization on domain and its existing Person on email,
+and gains a second Deal. Duplicating the company was the alternative, and the dedupe joins on domain,
+so a duplicate Organization would be a duplicate of the thing the dedupe reads.
+
+A field lives on the object it describes and that outlives the Deal. CIK, domain and industry belong
+to the company and never change; the score, the amount, the filing date and the written email belong
+to that one raise. Company name, person name and person email are Pipedrive's own built-in fields
+rather than custom ones, because the built-in email field is what Pipedrive matches an inbound reply
+against.
+
+### The stages
+
+`Enriched`, `Emailed`, `Replied`, `Held`, `Closed Won`, `Closed Lost`. Every Deal is created at
+Enriched, meaning it has a validated work email and written copy.
+
+Only a seeded test row ever reaches Emailed. A real company's Deal stays at Enriched with the drafted
+subject and body attached, which puts the compliance rule on the board instead of leaving it as an
+absence. Closed Won and Closed Lost are stages **and** flip Pipedrive's native won/lost flag, so the
+end of the pipeline is visible in the pipeline view rather than only in a report.
+
+`Held`, `Closed Won` and `Closed Lost` are set by the person working the deal, not by the pipeline.
+That is not a review queue: a rep working a live reply is the job, and Closed Won is where
+`existing_mercury_customers` gets filled in production, which is what closes the flywheel.
+
+### Ownership
+
+Supabase owns the state and Pipedrive mirrors it, as everywhere else in this build. n8n writes each
+Pipedrive id back into `outbound_companies_scored` the moment that object exists, so a run that dies
+halfway resumes instead of creating a second set of objects.
+
+Pipedrive addresses a custom field by a forty-character key, never by its display name. That map is
+archived at `docs/sources/pipedrive_fields_2026-09-04.md`, fetched by `scripts/09_pipedrive_probe.py`.
+
+Pipedrive has no free tier: this runs inside the fourteen-day trial, which takes no card, and no card
+is ever added. Budget stays $0 and the CRM leg is time-boxed rather than free forever.
 
 ## Reporting
 
