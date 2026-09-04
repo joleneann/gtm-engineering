@@ -3,25 +3,53 @@
   "nodes": [
     {
       "parameters": {
-        "postProcessAction": "read",
-        "options": {}
+        "content": "**One job: catch a reply, move the deal to Replied.**\n\nManual, on demand. Press Execute when a reply has landed. The Gmail node can also poll on its own if this workflow is published, but the demo runs it by hand so the path lights up on screen and any error shows on the node face.\n\nGmail over OAuth, not IMAP. IMAP connected and then returned nothing with no error to read, and its unread filter fought the demo: opening the inbox to check marked the mail read and it stopped matching. Gmail's API answers a query and says why when it cannot.\n\nMatches the sender against work_email on a row already at crm_stage emailed, then updates the deal by the id workflow 1 wrote back. No Pipedrive search needed.",
+        "height": 320,
+        "width": 460,
+        "color": 4
       },
+      "id": "b2000000-0000-4000-8000-00000000000a",
+      "name": "Sticky: overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1120, 120]
+    },
+    {
+      "parameters": {},
       "id": "b2000000-0000-4000-8000-000000000001",
-      "name": "Inbox",
-      "type": "n8n-nodes-base.emailReadImap",
-      "typeVersion": 2,
-      "position": [-560, 300],
-      "notes": "IMAP polling, not a webhook. A webhook would need a public URL, and a self-hosted tunnel gets a new address every restart, so the workflow would break every time n8n is stopped."
+      "name": "Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-600, 300]
     },
     {
       "parameters": {
-        "jsCode": "// The sender's address is what ties a reply back to a row. Strip the\n// display name: \"Travis <travis@atoms.co>\" has to become travis@atoms.co.\nconst out = [];\nfor (const item of $input.all()) {\n  const raw = item.json.from || item.json.headers?.from || '';\n  const m = String(raw).match(/[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}/);\n  if (!m) continue;\n  out.push({ json: { from_email: m[0].toLowerCase(), subject: item.json.subject || '' } });\n}\nreturn out;"
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "simple": true,
+        "filters": {
+          "q": "from:(biorhymehealth@gmail.com OR vernieann@gmail.com)"
+        },
+        "options": {}
       },
       "id": "b2000000-0000-4000-8000-000000000002",
-      "name": "Sender address",
+      "name": "Gmail: get replies",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [-380, 300],
+      "notes": "Scoped to the test inboxes. Everything else in the mailbox is ignored before it is ever fetched, so this cannot repeat the whole-mailbox read that took n8n to a 2 GB heap.",
+      "credentials": {
+        "gmailOAuth2": { "id": "UlmEx2JfwxqECVYg", "name": "Gmail account" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// The sender is what ties a reply back to a row: an address belongs to one\n// person, so the match is exact. Each test row has its own inbox for that\n// reason; two rows sharing an address would make the match ambiguous.\n//\n// Pull the plain address out of whatever shape the Gmail node emits.\nconst out = [];\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  const raw = (j.from && j.from.value && j.from.value[0] && j.from.value[0].address)\n    || (j.from && j.from.text)\n    || j.From || j.from || '';\n  const m = String(raw).match(/[\\w.+-]+@[\\w-]+\\.[\\w.-]+/);\n  if (!m) continue;\n  out.push({ json: { sender: m[0].toLowerCase(), snippet: j.snippet || '' } });\n}\nreturn out;"
+      },
+      "id": "b2000000-0000-4000-8000-000000000003",
+      "name": "Extract sender",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-340, 300]
+      "position": [-160, 300]
     },
     {
       "parameters": {
@@ -31,46 +59,34 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "select", "value": "cik,current_name_candidates,work_email,pipedrive_deal_id,crm_stage,sent_at" },
-            { "name": "work_email", "value": "=eq.{{ $json.from_email }}" },
+            { "name": "select", "value": "cik,current_name_candidates,work_email,pipedrive_deal_id,crm_stage" },
+            { "name": "work_email", "value": "=eq.{{ $json.sender }}" },
             { "name": "crm_stage", "value": "eq.emailed" },
+            { "name": "pipedrive_deal_id", "value": "not.is.null" },
             { "name": "limit", "value": "1" }
           ]
         },
-        "options": {}
+        "options": { "response": { "response": { "neverError": true } } }
       },
-      "id": "b2000000-0000-4000-8000-000000000003",
+      "id": "b2000000-0000-4000-8000-000000000004",
       "name": "Find the deal",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-120, 300],
-      "notes": "crm_stage = emailed, so only a reply to something actually sent moves a deal. Every other message in the inbox matches nothing and stops here.",
+      "position": [60, 300],
+      "notes": "crm_stage = emailed, so only a reply to something actually sent moves a deal. Anything else in the mailbox matches nothing and stops at the next node.",
       "credentials": {
-        "httpHeaderAuth": { "id": "SUPABASE_CRED", "name": "Supabase service role" }
+        "httpHeaderAuth": { "id": "rk1qdoaNbPQKApH0", "name": "Supabase service role" }
       }
     },
     {
       "parameters": {
-        "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
-          "conditions": [
-            {
-              "id": "r1",
-              "leftValue": "={{ $json.pipedrive_deal_id }}",
-              "rightValue": "",
-              "operator": { "type": "number", "operation": "exists", "singleValue": true }
-            }
-          ],
-          "combinator": "and"
-        },
-        "looseTypeValidation": true,
-        "options": {}
+        "jsCode": "// No row at crm_stage emailed for this sender: not one of ours, end quietly.\n// A reply from someone we never wrote to is a normal thing to receive.\nconst out = [];\nfor (const item of $input.all()) {\n  const body = item.json;\n  const rows = Array.isArray(body) ? body : (Array.isArray(body.body) ? body.body : []);\n  if (rows.length) out.push({ json: rows[0] });\n}\nreturn out;"
       },
-      "id": "b2000000-0000-4000-8000-000000000004",
-      "name": "Is it one of ours?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [100, 300]
+      "id": "b2000000-0000-4000-8000-000000000005",
+      "name": "One of ours?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 300]
     },
     {
       "parameters": {
@@ -83,14 +99,14 @@
         "jsonBody": "={{ JSON.stringify({ stage_id: 2 }) }}",
         "options": {}
       },
-      "id": "b2000000-0000-4000-8000-000000000005",
+      "id": "b2000000-0000-4000-8000-000000000006",
       "name": "Deal to Replied",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [320, 220],
+      "position": [500, 300],
       "notes": "stage_id 2 is Replied. Held, Closed Won and Closed Lost are set by the person working the deal, not by this workflow.",
       "credentials": {
-        "httpHeaderAuth": { "id": "PIPEDRIVE_CRED", "name": "Pipedrive API token" }
+        "httpHeaderAuth": { "id": "t43oltVpKrJSzMOA", "name": "Pipedrive API token" }
       }
     },
     {
@@ -102,7 +118,7 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "cik", "value": "=eq.{{ $('Find the deal').item.json.cik }}" }
+            { "name": "cik", "value": "=eq.{{ $('One of ours?').item.json.cik }}" }
           ]
         },
         "sendBody": true,
@@ -110,21 +126,23 @@
         "jsonBody": "={{ JSON.stringify({ replied_at: new Date().toISOString(), crm_stage: \"replied\" }) }}",
         "options": {}
       },
-      "id": "b2000000-0000-4000-8000-000000000006",
+      "id": "b2000000-0000-4000-8000-000000000007",
       "name": "Log the reply",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [540, 220],
+      "position": [720, 300],
+      "notes": "Supabase owns the state; Pipedrive mirrors it. The stage moves first, then the truth layer records it.",
       "credentials": {
-        "httpHeaderAuth": { "id": "SUPABASE_CRED", "name": "Supabase service role" }
+        "httpHeaderAuth": { "id": "rk1qdoaNbPQKApH0", "name": "Supabase service role" }
       }
     }
   ],
   "connections": {
-    "Inbox": { "main": [[{ "node": "Sender address", "type": "main", "index": 0 }]] },
-    "Sender address": { "main": [[{ "node": "Find the deal", "type": "main", "index": 0 }]] },
-    "Find the deal": { "main": [[{ "node": "Is it one of ours?", "type": "main", "index": 0 }]] },
-    "Is it one of ours?": { "main": [[{ "node": "Deal to Replied", "type": "main", "index": 0 }], []] },
+    "Run": { "main": [[{ "node": "Gmail: get replies", "type": "main", "index": 0 }]] },
+    "Gmail: get replies": { "main": [[{ "node": "Extract sender", "type": "main", "index": 0 }]] },
+    "Extract sender": { "main": [[{ "node": "Find the deal", "type": "main", "index": 0 }]] },
+    "Find the deal": { "main": [[{ "node": "One of ours?", "type": "main", "index": 0 }]] },
+    "One of ours?": { "main": [[{ "node": "Deal to Replied", "type": "main", "index": 0 }]] },
     "Deal to Replied": { "main": [[{ "node": "Log the reply", "type": "main", "index": 0 }]] }
   },
   "settings": { "executionOrder": "v1" },

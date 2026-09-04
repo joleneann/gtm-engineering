@@ -47,6 +47,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 33 | 2026-09-04 | Copy is written by Claygent from a signal on the company's **own** site, paired with what that signal means for their money, and never from the funding round. The signal picks two Mercury features from a fixed list of five; the fifth is added at $250,000 and over of amount sold. Peer names are not cited: 38 of the 50 live rows are `Other Technology`, so the cluster's named customers failed the genuineness test far more often than they passed. The prompt is versioned at `prompts/claygent_copy.md` | `seeded competitor use cases` |
 | 34 | 2026-09-04 | The CRM model is settled and built: Organization, Person and Deal; six stages; eleven custom fields. Nothing is superseded, because the original never named an object, a stage or a field. Verified against the live account by `scripts/09_pipedrive_probe.py` and archived at `docs/sources/pipedrive_fields_2026-09-04.md` | |
 | 35 | 2026-09-04 | Domain comes from Claygent alone. The Find Work Email waterfall also emits one; on the 16 resolved rows the two disagreed five times and the waterfall was wrong every time, offering the filing agent's law firm, a data vendor or yahoo.com. It adds no coverage Claygent did not already have, so it is not read | |
+| 36 | 2026-09-04 | The reply leg reads Gmail over OAuth, not IMAP. IMAP connected, reported no error, and returned nothing; its unread filter also fought the run, because opening the inbox to check whether mail had arrived marked it read and it stopped matching. Gmail's API answers a query and says why when it cannot | |
 
 ---
 
@@ -628,6 +629,60 @@ Only after the dedupe does n8n fill the CRM and send the emails to test rows.
 
 n8n takes the enriched companies and logs all of them to Pipedrive. It sends only to the seeded test
 rows, catches the reply, and moves the deal's pipeline stage in Pipedrive to match.
+
+### The three workflows
+
+**1, outbound run.** Reads the dispatchable rows, creates the Organization, Person and Deal, writes
+all three ids back, then branches. A test row is emailed and its deal moves to Emailed; a real company
+gets a Pipedrive task holding the drafted subject and body, and its deal stays at Enriched.
+
+**2, reply catcher.** Reads Gmail, matches the sender against `work_email` on a row already at
+`crm_stage` emailed, moves that deal to Replied and stamps `replied_at`. A reply from an address we
+never wrote to matches nothing and ends quietly, which is a normal thing to receive.
+
+**3, flywheel.** Won deals are written into `existing_mercury_customers`, so the next Form D from that
+company is deduped out instead of emailed. This is what makes the dedupe self-feeding rather than
+seeded.
+
+### Idempotency is a query, not a lookup
+
+Workflow 1 asks Supabase only for rows whose `pipedrive_deal_id` is still null. A row already in the
+CRM is never fetched, so re-running cannot produce a second deal and no find-or-create search is
+needed. The ids are written back the moment each object exists, so a run that dies halfway resumes.
+
+### The compliance rule is a node that fails the run
+
+Not an `if` that skips. A row flagged `is_test_row` whose address is not in `TEST_EMAILS` stops the
+workflow with an error, because a rule enforced by convention is a rule that eventually sends to a
+real company.
+
+Each test row has **its own** inbox. One shared address cannot demonstrate a reply: the sender is what
+ties a reply back to a row, and two rows on one address make that match ambiguous. The real address is
+replaced rather than kept beside the flag, because an address still sitting in the row is an address
+that can still be sent to.
+
+### Gmail, not IMAP
+
+Reply catching reads the Gmail API over OAuth. IMAP was tried first and is the wrong tool here: it
+connected, reported no error, and returned nothing, and its unread filter fought the run, because
+opening the inbox to check whether a message had arrived marked it read and it stopped matching. Read
+unfiltered it pulled every unread message in a personal mailbox and took the process to a 2 GB heap.
+The Gmail query is scoped to the test inboxes, so nothing else is fetched at all.
+
+There is no webhook anywhere. A self-hosted webhook needs a public URL, and a tunnel gets a new
+address on every restart, so the workflow would break each time n8n stopped.
+
+### Measured, 2026-09-04
+
+| | |
+|---|---|
+| Deals created | 5 |
+| Emailed | 2, both test rows |
+| Real companies emailed | **0** |
+| Real companies at Enriched with a drafted task | 3 |
+| Deals moved to Replied by a real reply | 2 |
+
+Every one of the five carries its Organization, Person and Deal id in Supabase.
 
 ### The objects
 
