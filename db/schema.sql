@@ -607,44 +607,95 @@ create table if not exists contacted_emails (
 -- 6. VIEWS
 -- ---------------------------------------------------------------------
 
--- Where every company went, ingest to dispatchable. The Clay and dedupe
--- stages read 0 until enrichment runs and fill in on their own afterwards.
+-- Where every company went, ingest to an email that could actually be sent.
+--
+-- Corrected 2026-09-04. The previous version lost 814 of 830 scored companies
+-- and overstated the last stage. It counted the unenriched as
+-- not_selected / enrich_no_domain / enrich_no_work_email, and no script ever
+-- writes not_selected: 780 companies were never sent to Clay because only 50
+-- fit the free tier, and 34 were sent but Clay ran out of credits first. All
+-- 814 are still 'pending' and matched no line, so they were counted nowhere.
+-- It also called 10 rows dispatchable on enrichment and dedupe alone, when 5 of
+-- them had a verified address and no copy, so nothing could be sent to them.
+--
+-- Two stages are named for what actually happened rather than for a status:
+-- never_sent_to_clay is a budget boundary, not a resolution failure, and
+-- has_copy is the only count from which an email can leave.
+--
+-- never_sent_to_clay excludes the same-signer rows. They are 'pending' too,
+-- so counting every pending row put them in two stages at once and the
+-- funnel added to 860 against 830 scored. A stage a company can be in twice
+-- is not a funnel.
 create or replace view v_funnel as
-select  1 as seq, 'ingested'      as stage, null::text as reason_code,
-        count(*) as companies
-  from  filings_raw where is_primary_issuer
-union all
-select  2, 'routed_out', reason_code, count(*)
-  from  formd_funds group by reason_code
-union all
-select  3, 'routed_out', 'scope_non_us_incorporation', count(*)
-  from  likely_unserviceable_companies where jurisdiction_fail
-union all
-select  4, 'routed_out', 'scope_unsupported_country', count(*)
-  from  likely_unserviceable_companies where address_fail
-union all
-select  5, 'parked', reason_code, count(*)
-  from  no_industry_companies group by reason_code
-union all
-select  6, 'scored', null, count(*)
+with stages as (
+  select  1 as seq, 'ingested' as stage, null::text as reason_code,
+          (select count(*) from filings_raw where is_primary_issuer) as companies
+  union all
+  select  2, 'routed_out', reason_code, count(*)
+    from  formd_funds group by reason_code
+  union all
+  select  3, 'routed_out', 'scope_non_us_incorporation', count(*)
+    from  likely_unserviceable_companies where jurisdiction_fail
+  union all
+  select  4, 'routed_out', 'scope_unsupported_country', count(*)
+    from  likely_unserviceable_companies where address_fail
+  union all
+  select  5, 'parked', reason_code, count(*)
+    from  no_industry_companies group by reason_code
+  union all
+  select  6, 'scored', null, (select count(*) from outbound_companies_scored)
+  union all
+  select  7, 'held_back', 'dupe_same_signer', count(*)
+    from  outbound_companies_scored where dedupe_status = 'dupe_same_signer'
+  union all
+  select  8, 'never_sent_to_clay', 'free_tier_row_cap', count(*)
+    from  outbound_companies_scored
+   where  enrichment_status = 'pending'
+     and  dedupe_status <> 'dupe_same_signer'
+  union all
+  select  9, 'enrich_failed', enrichment_status, count(*)
+    from  outbound_companies_scored
+   where  enrichment_status in ('not_selected', 'enrich_no_domain', 'enrich_no_work_email')
+   group  by enrichment_status
+  union all
+  select 10, 'enriched', null, count(*)
+    from  outbound_companies_scored where enrichment_status = 'enriched'
+  union all
+  select 11, 'removed', dedupe_status, count(*)
+    from  outbound_companies_scored
+   where  dedupe_status in ('dupe_existing_customer', 'dupe_inbound', 'dupe_already_emailed')
+   group  by dedupe_status
+  union all
+  select 12, 'has_copy', null, count(*)
+    from  outbound_companies_scored
+   where  enrichment_status = 'enriched'
+     and  dedupe_status = 'unique'
+     and  copy_body is not null
+)
+select  seq, stage, reason_code, companies,
+        round(100.0 * companies
+              / nullif(first_value(companies) over (order by seq), 0), 2) as pct_of_ingested
+  from  stages
+ order  by seq, reason_code;
+
+
+-- Every stage a company reaches once it is in the CRM.
+--
+-- Grouped this way because it is what makes the compliance rule readable in
+-- SQL rather than asserted in prose: real companies sit at 'enriched' with
+-- sent = 0, and every row with sent > 0 is a test row. A real company appearing
+-- with sent > 0 would be the failure, and here it would be one line.
+create or replace view v_outreach as
+select  crm_stage,
+        count(*)                                       as deals,
+        count(*) filter (where is_test_row)            as test_rows,
+        count(*) filter (where not is_test_row)        as real_companies,
+        count(*) filter (where sent_at is not null)    as sent,
+        count(*) filter (where replied_at is not null) as replied
   from  outbound_companies_scored
-union all
-select  7, 'not_enriched', enrichment_status, count(*)
-  from  outbound_companies_scored
- where  enrichment_status in ('not_selected', 'enrich_no_domain', 'enrich_no_work_email')
- group  by enrichment_status
-union all
-select  8, 'enriched', null, count(*)
-  from  outbound_companies_scored where enrichment_status = 'enriched'
-union all
-select  9, 'removed', dedupe_status, count(*)
-  from  outbound_companies_scored
- where  dedupe_status in ('dupe_existing_customer', 'dupe_inbound')
- group  by dedupe_status
-union all
-select 10, 'dispatchable', null, count(*)
-  from  outbound_companies_scored
- where  enrichment_status = 'enriched' and dedupe_status = 'unique';
+ where  pipedrive_deal_id is not null
+ group  by crm_stage
+ order  by crm_stage;
 
 
 -- least() clamps a perfect 10.00 into the top bucket rather than letting

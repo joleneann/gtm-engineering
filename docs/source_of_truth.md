@@ -48,6 +48,8 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 | 34 | 2026-09-04 | The CRM model is settled and built: Organization, Person and Deal; six stages; eleven custom fields. Nothing is superseded, because the original never named an object, a stage or a field. Verified against the live account by `scripts/09_pipedrive_probe.py` and archived at `docs/sources/pipedrive_fields_2026-09-04.md` | |
 | 35 | 2026-09-04 | Domain comes from Claygent alone. The Find Work Email waterfall also emits one; on the 16 resolved rows the two disagreed five times and the waterfall was wrong every time, offering the filing agent's law firm, a data vendor or yahoo.com. It adds no coverage Claygent did not already have, so it is not read | |
 | 36 | 2026-09-04 | The reply leg reads Gmail over OAuth, not IMAP. IMAP connected, reported no error, and returned nothing; its unread filter also fought the run, because opening the inbox to check whether mail had arrived marked it read and it stopped matching. Gmail's API answers a query and says why when it cannot | |
+| 37 | 2026-09-04 | `v_funnel` rewritten and `v_outreach` added, in `db/migration_003_views.sql`. The old funnel counted 814 of the 830 scored companies nowhere, because it looked for a `not_selected` status no script writes, and it called 10 rows dispatchable on enrichment and dedupe alone when 5 of those had no copy to send | `every stage from ingest to
+dispatchable` |
 
 ---
 
@@ -726,9 +728,61 @@ is ever added. Budget stays $0 and the CRM leg is time-boxed rather than free fo
 
 ## Reporting
 
-Replies are logged back into Supabase, and campaign health is read from SQL views sitting on those same
-tables. The pipeline funnel is the view `v_funnel`, which covers every stage from ingest to
-dispatchable, including the Clay and dedupe exits.
+Replies are logged back into Supabase, and campaign health is read from SQL views sitting on those
+same tables: `v_funnel` for the pipeline, `v_outreach` for the CRM leg. There is no unit-economics
+view, because spend is $0 and there is no cost table; one would report zeros and imply a measurement.
+
+### v_funnel
+
+Every stage from ingest to an email that could actually be sent, with each stage as a percentage of
+ingested. Measured 2026-09-04:
+
+| Stage | Reason | Companies | % of ingested |
+|---|---|---|---|
+| ingested | | 3,512 | 100 |
+| routed_out | `scope_pooled_investment_fund` | 1,996 | 56.83 |
+| routed_out | `scope_non_us_incorporation` | 232 | 6.61 |
+| routed_out | `scope_unsupported_country` | 106 | 3.02 |
+| parked | `scope_industry_other` | 346 | 9.85 |
+| scored | | 830 | 23.63 |
+| held_back | `dupe_same_signer` | 30 | 0.85 |
+| never_sent_to_clay | `free_tier_row_cap` | 784 | |
+| enrich_failed | `enrich_no_work_email` | 3 | 0.09 |
+| enriched | | 13 | 0.37 |
+| removed | the three dedupe codes | 1 each | |
+| has_copy | | 5 | 0.14 |
+
+The stages after `scored` add to 830 exactly: 30 + 784 + 3 + 13.
+
+Two stages are named for what happened rather than for a status. **`never_sent_to_clay` is a budget
+boundary, not a resolution failure**: 780 companies never fitted the free tier and 34 were sent but
+Clay ran out of credits first. Calling them `enrich_no_domain` would claim a measurement nobody took.
+**`has_copy` replaces dispatchable**, because enrichment and dedupe alone say a row has an address,
+not that there is anything to send to it.
+
+`never_sent_to_clay` excludes the same-signer rows, which are also `pending`. Counting every pending
+row put them in two stages at once and the funnel added to 860 against 830 scored.
+
+### v_outreach
+
+One row per CRM stage, splitting test rows from real companies and counting sends and replies.
+Measured 2026-09-04:
+
+| Stage | Deals | Test | Real | Sent | Replied |
+|---|---|---|---|---|---|
+| enriched | 3 | 0 | 3 | 0 | 0 |
+| replied | 2 | 2 | 0 | 2 | 2 |
+
+This is the compliance rule made readable in SQL rather than asserted in prose. Real companies sit at
+`enriched` with `sent = 0`. A real company with `sent > 0` would be one visible line.
+
+### What this build cannot report
+
+Reply rate, open rate, deliverability, cost per lead, the domain resolution rate, and the natural
+dedupe rates. The replies are the build's own test emails; there is no tracking, by design, because a
+pixel or a redirect domain is what harms deliverability; there is no cost table and nothing was paid
+for; 16 of 50 domains is where the free tier stopped; and all three dedupe codes fired against seeds.
+A view that reported any of them would be reporting a number nobody measured.
 
 ***
 
