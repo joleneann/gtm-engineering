@@ -91,6 +91,8 @@ campaign: a Form D issuer address that is a registered agent (common in Delaware
 3. **Every VC fund customer gets a relationship manager**, independent of the $10M balance rule and
    the Pro subscription recorded in #23. Three RM paths now, not one.
 4. **The Form D `Pooled Investment Fund` gate cannot be justified by the eligibility list.** Its
-   justification is that a fund's `totalAmountSold` is committed capital drawn down over years, not
-   a bank balance, so the field means something different for that population and cannot share a
-   scoring scale with it.
+   justification is Form D's own Item 13 instruction, that the sold amount includes "cash to be paid
+   in the future under mandatory capital commitments", so the field can report money not received and
+   cannot share a scoring scale with a figure read as cash on hand. Corrected 2026-09-04: this
+   paragraph is analysis, not capture, and previously asserted a drawdown period the form does not
+   state. The captured text in this file is untouched.

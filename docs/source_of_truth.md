@@ -53,6 +53,7 @@ must never reappear in `docs/` or `CLAUDE.md`; `scripts/00_doc_check.py` enforce
 dispatchable` |
 | 39 | 2026-09-04 | `enrich_no_domain` is a measured zero, not a status any row carries. The import writes `enrich_no_work_email` where a domain resolved and no address survived, and leaves a row Clay never reached at `pending`. The old sentence contradicted this document's own funnel section two pages later | `flagged enrich_no_domain or` |
 | 40 | 2026-09-04 | `README.md` added: a short version of this document for someone opening the repository, and read in full by `scripts/00_doc_check.py` like everything under `docs/`, so it cannot drift away from this one | |
+| 41 | 2026-09-04 | The fund gate's justification is rewritten to what Form D actually says. Item 13 states the sold amount includes "cash to be paid in the future under mandatory capital commitments", and a capital call needs no new filing, which is enough on its own. The drawdown period was never on the form, and the instruction is not fund-specific: it binds any issuer with a mandatory future payment. The same sentence is corrected in the analysis section of `docs/sources/mercury_vc_funds_2026-08-28.md`; the captured text in that file is untouched | `committed capital drawn down over years` |
 
 ---
 
@@ -147,8 +148,25 @@ Using either one of the two caused leaks. Measured across two full days: the uni
 103/165, and the tick alone catches 9 and 5 funds the industry group misses.
 
 They move to a 3rd Supabase table `formd_funds` as Mercury advertises funds as one of their customer
-segments. A separate flow can be built for them later as it requires different scoring logic and copy:
-a fund's amount sold is committed capital drawn down over years, not cash sitting in an account.
+segments. A separate flow can be built for them later as it requires different scoring logic and copy,
+and the reason is in the form's own instructions rather than in anything assumed about funds.
+
+**Quoted**, Item 13: the offering and sold amounts "should include all cash and other consideration to
+be received for the securities, including cash to be paid in the future under mandatory capital
+commitments". **Quoted**, the filing rules: "A mandatory capital commitment call does not constitute a
+new offering, but is made under the original offering, so no new Form D filing is required."
+
+**Derived** from those two sentences: `totalAmountSold` can include money the issuer has not received,
+and when that money does arrive no filing records it. The amount-sold points are a proxy for cash on
+hand, so that population is scored on a number that does not mean what the score assumes.
+
+**The instruction is not fund-specific**, and this document previously implied it was. It binds any
+issuer with a mandatory future payment, so a startup raising in tranches counts its commitments the
+same way. What is specific to funds is that committed-then-called capital is the ordinary structure
+rather than the exception, and the form's own `Pooled Investment Fund` box is what identifies them.
+How long a drawdown takes is not stated anywhere on the form and is not claimed here.
+
+Evidence: `docs/sources/sec_form_d_official_2026-08-29.md`.
 
 ### Routing out unserviceable companies
 
