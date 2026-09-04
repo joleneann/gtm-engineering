@@ -631,6 +631,13 @@ create table if not exists contacted_emails (
 -- The sent level depends on sent_to_clay_at, filled by
 -- scripts/14_backfill_sent_to_clay.py. Without it every scored row reads as
 -- never sent.
+-- NOTE: the view is DROPPED first, not replaced. `create or replace view`
+-- cannot add, rename or reorder a column, and this version adds `level` and
+-- `pct_of_level`; Postgres answers 42P16, "cannot change name of view column".
+-- Nothing depends on v_funnel, so the drop takes nothing with it.
+
+drop view if exists v_funnel;
+
 create or replace view v_funnel with (security_invoker = on) as
 with base as (
   -- Every company EDGAR gave us, from every filing row: primary issuers,

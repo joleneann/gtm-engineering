@@ -46,6 +46,13 @@
 --
 -- Revert: db/revert_007.sql restores the migration 003 version.
 
+-- NOTE: the view is DROPPED first, not replaced. `create or replace view`
+-- cannot add, rename or reorder a column, and this version adds `level` and
+-- `pct_of_level`; Postgres answers 42P16, "cannot change name of view column".
+-- Nothing depends on v_funnel, so the drop takes nothing with it.
+
+drop view if exists v_funnel;
+
 create or replace view v_funnel with (security_invoker = on) as
 with base as (
   -- Every company EDGAR gave us, from every filing row: primary issuers,
