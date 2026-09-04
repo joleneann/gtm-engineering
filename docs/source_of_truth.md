@@ -56,6 +56,7 @@ dispatchable` |
 | 41 | 2026-09-04 | The fund gate's justification is rewritten to what Form D actually says. Item 13 states the sold amount includes "cash to be paid in the future under mandatory capital commitments", and a capital call needs no new filing, which is enough on its own. The drawdown period was never on the form, and the instruction is not fund-specific: it binds any issuer with a mandatory future payment. The same sentence is corrected in the analysis section of `docs/sources/mercury_vc_funds_2026-08-28.md`; the captured text in that file is untouched | `committed capital drawn down over years` |
 | 42 | 2026-09-04 | `v_funnel` counts companies throughout, one row per company at the furthest gate it reached, and every row names the population it is a share of. The version before it put filings and companies under one column called companies, counted the 95 companies failing both servicability tests twice, and reported 34 companies that went to Clay as never sent. `sent_to_clay_at` had never been written to, so the view could not tell a company Clay never saw from one that returned nothing; `scripts/14_backfill_sent_to_clay.py` fills it from the uploaded export. In `db/migration_007_funnel_companies.sql` | `30 + 784 + 3 + 13` |
 | 43 | 2026-09-04 | The multi-filing rollup paragraph is rewritten in plain sentences. No fact changes and nothing is withdrawn: it made three points, that a re-filing company re-enters on purpose, that contactability is settled at the dedupe rather than here, and that held, closed and lost need no code of their own, and it made them in two sentences nobody could read | |
+| 44 | 2026-09-04 | The Total Remaining rationale is rewritten in plain sentences: what the point measures, why the unsold amounts are added across rolled filings, and why it is worth one point. No fact changes and nothing is withdrawn | |
 
 ---
 
@@ -299,18 +300,20 @@ points   = 1 - curve(v)
 | 10,000,000 | 0.26 |
 | 50,000,000+ | 0.00 |
 
-One point goes to the amount still unsold across every filing rolled into the row, summed the same way
-`totalAmountSold` is, and it exists to catch companies in the right industry that declared a large
-offering and have sold none of it. Remaining is an amount, so it follows the merge rule that amounts
-are added and only non-amount fields come from the newest filing. Reading only the newest filing would
-let a company with $50M unsold across earlier rounds take the full point because its latest small
-filing happened to close, which is the opposite of what the point measures. It also adds separation;
-adding it leaves the model with materially fewer tie groups than amount sold produces on its own.
+**What it measures.** How much of the round the company has *not* sold yet. Sold the lot, one point.
+Announced $50M and sold none of it, zero. The assumption is that a company with its round closed is
+closer to making a banking decision than one still out fundraising.
 
-The assumption is that a company with most of its round closed is closer to making a banking decision.
-It gets one point rather than more because its correlation with amount points is about +0.3 on test
-cases, so it is a weaker second reading of something amount already measures rather than an
-independent signal. Zero left to raise lands on exactly 1.00.
+**The unsold amounts from every rolled filing are added together**, exactly as the sold amounts are.
+Here is why that matters. Say a company has $50M still unsold from an earlier round, then files a
+small $100,000 round and sells all of it. Read only the newest filing and "still unsold" is zero, so
+it takes the full point for having closed everything out. That is false: it is still sitting on $50M
+it has not raised. Adding them up says so.
+
+**Why it is worth only one point.** It moves with the amount-sold points, about +0.3 on the test
+cases, so it is a second, weaker reading of something already measured rather than an independent
+signal. What it does earn its place for is separation: adding it leaves materially fewer companies
+tied on the same score than amount sold produces alone.
 
 ### Industry Match, 3 points
 
