@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Start the local n8n for this build.
 #
-# It died once at a 2 GB heap: the IMAP trigger pulls every unread message in
-# the mailbox, and a personal Gmail has years of them. The node is filtered to
-# today's mail, and these limits stop the rest of n8n growing without bound.
+# It died twice reading mail over IMAP: that trigger pulls every unread message
+# in the mailbox, and a personal Gmail has years of them. Replies now come from
+# the Gmail node over OAuth with a sender query, so nothing is fetched that is
+# not a reply, and these limits stop the rest of n8n growing without bound.
 #
 # N8N_DIAGNOSTICS_ENABLED=false also silences the telemetry that retried a
 # blocked host in a loop and held buffers while doing it.
-export NODE_OPTIONS="--max-old-space-size=1024"
+export NODE_OPTIONS="--max-old-space-size=2048"
 export N8N_DIAGNOSTICS_ENABLED=false
 export N8N_VERSION_NOTIFICATIONS_ENABLED=false
 export N8N_TEMPLATES_ENABLED=false
