@@ -2,7 +2,7 @@
 
 Mercury sells banking and finance operations to startups. This Go-to-Market Engineering build aims to acquire new customers for Mercury by sending them a cold email when they raise funding.
 
-The build demonstrates judgement, system design, data modelling, edge case handling, schema design, ICP segmentation, scoring logic, and copywriting at scale. Python ingests and scores leads; Supabase is the truth layer; Clay for enrichment; n8n is the conveyor belt, and Pipedrive is the CRM. I built this with Claude Code, held to a written contract in CLAUDE.md: it wrote the scripts; I made every design call.
+The build demonstrates system design, data modelling, edge case handling, schema design, ICP segmentation, scoring logic, and copywriting at scale. Python ingests and scores leads; Supabase is the truth layer; Clay for enrichment; n8n is the conveyor belt, and Pipedrive is the CRM. I built this with Claude Code, held to a written contract in CLAUDE.md: it wrote the scripts; I made every design call.
 
 **THE TRIGGER**
 
@@ -44,7 +44,7 @@ Python scripts use the REST endpoints from the EDGAR SEC database system to fetc
 * Each Form D of the day in XML  
 * Each company’s filing history in JSON
 
-These raw documents get written whole into Supabase on two tables:
+These become 2 Supabase tables:
 
 1. **filings_raw** for all filings with date, keyed on accession number plus CIK - a compound key, as several companies can be listed in one filing if they sell in the same transaction  
 2. **entities_raw** keyed on CIK
@@ -147,7 +147,7 @@ points   = 1 - curve(v)
 | 10,000,000 | 0.26 |
 | 50,000,000+ | 0.00 |
 
-One point goes to the amount still left to raise in the round filed, and it exists to catch companies in the right industry that declared a large offering and have sold none of it. It also adds separation; adding it leaves the model with materially fewer tie groups than amount sold produces on its own.
+One point is the amount left to raise, and it exists to catch companies in the right industry that declared a large offering and have sold none of it. It also adds separation; adding it leaves the model with materially fewer tie groups than amount sold produces on its own.
 
 The assumption is that a company with most of its round closed is closer to making a banking decision. It gets one point rather than more because its correlation with amount points is about +0.3 on test cases, so it is a weaker second reading of something amount already measures rather than an independent signal.
 
