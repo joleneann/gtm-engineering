@@ -672,10 +672,14 @@ n as (
              and dedupe_status = 'unique')                               as survived_dedupe
 ),
 stages as (
-  -- LEVEL 1: every company, counted once, at the furthest gate it reached.
-  select  1 as seq, 'all companies' as level, 'ingested' as stage,
+  -- LEVEL 0: the population everything below is a share of. Its own level,
+  -- because the rows under 'all companies' add up to exactly this number and
+  -- putting it beside them counts it twice (migration 008).
+  select  1 as seq, 'ingested' as level, 'ingested' as stage,
           null::text as reason_code, (select ingested from n) as companies,
           (select ingested from n) as level_base
+
+  -- LEVEL 1: every company, counted once, at the furthest gate it reached.
   union all
   select  2, 'all companies', 'routed_out', 'scope_pooled_investment_fund',
           count(*), (select ingested from n) from placed where gate = 2

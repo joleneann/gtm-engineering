@@ -1,55 +1,41 @@
--- Migration 007: rebuild v_funnel so it counts one thing, and so its rows can
--- be added up.
+-- Migration 008: stop v_funnel's first level double counting.
 --
--- Apply through the Supabase SQL editor. Views only: no table, column or
+-- Apply through the Supabase SQL editor. One view. No table, column or
 -- constraint is touched.
 --
--- WHAT WAS WRONG
+-- WHAT IS WRONG
 --
--- 1. Mixed units under one column called `companies`. `ingested` (3,512),
---    `scope_pooled_investment_fund` (1,996) and `scope_industry_other` (346)
---    counted FILINGS. The two servicability rows counted COMPANIES, and
---    everything from `scored` down counted companies. Four of the six rows in
---    the top block were filings.
+-- Migration 007 put six rows in the level called 'all companies':
 --
--- 2. The two servicability rows overlapped. 232 fail on incorporation and 106
---    on address, but only 243 distinct companies are in that table: 95 fail on
---    both and were counted twice.
+--   ingested                                             2953
+--   routed_out  scope_pooled_investment_fund             1664
+--   routed_out  scope_non_us_incorporation                232
+--   routed_out  scope_unsupported_country                  11
+--   parked      scope_industry_other                      216
+--   scored                                                830
 --
--- 3. Because of 1 and 2, the top block added to 3,510 against an ingested
---    3,512. Two errors nearly cancelling is not a reconciliation.
+-- The bottom five partition the top one: 1664 + 232 + 11 + 216 + 830 = 2953.
+-- So the level sums to 5906, which is 2953 counted twice.
 --
--- 4. `never_sent_to_clay = 784` was false for 34 of those rows. They went to
---    Clay and came back with nothing. The view could not tell the difference
---    because sent_to_clay_at was null on all 830 rows; scripts/14 fills it.
+-- Every other level is correct, because no other level carries a base row:
+-- 'of the scored' sums to 830, 'of those sent to Clay' to 50, 'of the
+-- enriched' to 13, 'of those that survived dedupe' to 10.
 --
--- 5. Rows 7 to 12 were a breakdown of row 6, not further subtractions from it,
---    and nothing in the output said so. Anyone reading it top to bottom as a
---    funnel got a number that did not reconcile, correctly concluded it was
---    broken, and had no way to see which half was at fault.
+-- Migration 007's own verification comment asserts that 'all companies' sums
+-- to 2953. It does not, and never did. The comment was written from the design
+-- rather than from a run, which is the exact failure that block exists to
+-- catch. It is corrected in that file in the same commit as this one.
 --
--- WHAT IT DOES NOW
+-- WHAT IT DOES
 --
--- Companies throughout, because the question this build asks is how many
--- businesses could be emailed, and one company files more than one Form D.
--- Databricks filed two on a single day.
+-- Moves the ingested row into a level of its own, named 'ingested'. Nothing
+-- else changes: same rows, same counts, same order, same column list.
 --
--- A company that appears at two gates is counted at the FURTHEST one it
--- reached. Three companies have one filing routed out as a fund and another
--- filing that scored, and two are parked on one filing and scored on another.
--- If any filing survived, the company survived, so it is counted as scored and
--- nowhere else. First-gate-wins would have hidden five companies that are
--- genuinely contactable.
+-- After this, every level sums to the population it describes, and 'ingested'
+-- and 'all companies' both come to 2953 because the second is a partition of
+-- the first.
 --
--- Every row carries the population it is a share of, in `level`. Rows inside
--- one level add to that level's base exactly, and levels never add across.
---
--- Revert: db/revert_007.sql restores the migration 003 version.
-
--- NOTE: the view is DROPPED first, not replaced. `create or replace view`
--- cannot add, rename or reorder a column, and this version adds `level` and
--- `pct_of_level`; Postgres answers 42P16, "cannot change name of view column".
--- Nothing depends on v_funnel, so the drop takes nothing with it.
+-- Revert: db/revert_008.sql restores the migration 007 wording.
 
 drop view if exists v_funnel;
 
@@ -87,10 +73,14 @@ n as (
              and dedupe_status = 'unique')                               as survived_dedupe
 ),
 stages as (
-  -- LEVEL 1: every company, counted once, at the furthest gate it reached.
-  select  1 as seq, 'all companies' as level, 'ingested' as stage,
+  -- LEVEL 0: the population everything below is a share of. Its own level,
+  -- because the rows under 'all companies' add up to exactly this number and
+  -- putting it beside them counts it twice.
+  select  1 as seq, 'ingested' as level, 'ingested' as stage,
           null::text as reason_code, (select ingested from n) as companies,
           (select ingested from n) as level_base
+
+  -- LEVEL 1: every company, counted once, at the furthest gate it reached.
   union all
   select  2, 'all companies', 'routed_out', 'scope_pooled_investment_fund',
           count(*), (select ingested from n) from placed where gate = 2
@@ -191,22 +181,22 @@ select seq,
 
 comment on view v_funnel is
 'Companies, never filings, counted once each at the furthest gate they reached. '
-'Rows within one level add to that level base exactly; levels never add across. '
-'Rebuilt 2026-09-04: see db/migration_007_funnel_companies.sql for what was wrong.';
+'Every level sums to the population it describes; levels never add across. '
+'Rebuilt 2026-09-04 (migration 007) and corrected 2026-09-05 (migration 008), '
+'which moved the ingested row out of the level its own parts add up to.';
 
 
--- Verification. Every level must reconcile against its own base.
+-- Verification. Run this and read it against the numbers below. Both were
+-- produced by running it, not by reading the SQL.
 --
 --   select level, sum(companies) from v_funnel group by level;
 --
---   all companies                  -> 5906  <- WRONG, and corrected by migration 008.
---       This block originally claimed 2953. It was written from the design
---       rather than from a run: the ingested row sits in the same level as
---       the five rows that partition it, so the level counts 2953 twice.
+--   ingested                       -> 2953  (= select count(distinct cik) from filings_raw)
+--   all companies                  -> 2953
 --   of the scored                  ->  830
 --   of those sent to Clay          ->   50
 --   of the enriched                ->   13
 --   of those that survived dedupe  ->   10
 --
--- Run scripts/14_backfill_sent_to_clay.py FIRST. Without sent_to_clay_at the
--- sent level is empty and 'of the scored' reports every row as never sent.
+-- 'ingested' and 'all companies' are equal on purpose: the second is a
+-- partition of the first. Every other level is a partition of the row above it.
