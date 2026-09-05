@@ -11,8 +11,14 @@ Columns are the payload named in the source of truth, in that order, plus
 rolled_filing_count (changelog 16) so a summed amount is never read as a
 single raise, and also_signed_for (changelog 23) naming the other companies
 the same person signed for, which sits beside contact_name because it is a
-fact about that person. website_from_edgar is not exported: it is empty on all
-830 scored companies (changelog 27).
+fact about that person.
+
+Three columns are deliberately absent. website_from_edgar is empty on all 830
+scored companies (changelog 27). amount_remaining and prior_formd_count are
+scoring inputs and nothing in Clay reads them: the Claygent prompt takes
+current_name, domain, contact_name_clean, industry, amount_sold and email, and
+no other column runs an action on them. All three stay in
+outbound_companies_scored; only the payload drops them.
 
 ONLY ROWS THAT SURVIVED THE SIGNER COLLAPSE ARE EXPORTED. A row marked
 dupe_same_signer is one of 19 Imagen entities signed by the same human, and
@@ -37,12 +43,13 @@ Two files are written:
   clay_payload_<date>_top200.csv the first 200 of them, because a Clay free
                                  table holds 200 rows
 
-Which rows actually cross into Clay is the enrichment-gate decision and is not
-made here: this script does not touch enrichment_status, so nothing is marked
-not_selected behind your back.
+Which rows actually cross into Clay is decided by what fits the free tier, not
+here: this script does not touch enrichment_status, so no row is reclassified
+behind your back. A scored row that never reaches Clay is counted in v_funnel as
+free_tier_row_cap, a budget boundary rather than a failed enrichment.
 
 Usage:
-    python scripts/05_export_clay_csv.py
+    py -3 scripts/06_export_clay_csv.py
 """
 import os
 import re
@@ -69,8 +76,12 @@ JUNK = ("None", "null", "[]", "{}", "N/A", "n/a", "NA", "none",
 # evidence that confirms an answer, then the facts the copy is built from.
 # also_signed_for sits beside contact_name because it is a fact about that
 # person, not about this company.
+# rolled_filing_count follows amount_sold, because it is how many filings that
+# figure adds together and is meaningless anywhere else.
 # website_from_edgar is deliberately absent: measured empty on all 830 scored
-# companies, so it was 200 blank cells. The column stays in Supabase.
+# companies, so it was 200 blank cells. amount_remaining and prior_formd_count
+# are absent too: they are scoring inputs and no Clay column or prompt reads
+# them. All three stay in Supabase.
 COLUMNS = [
     "cik",
     "score",
@@ -83,9 +94,7 @@ COLUMNS = [
     "phone_candidates",
     "industry",
     "amount_sold",
-    "amount_remaining",
     "rolled_filing_count",
-    "prior_formd_count",
     "filing_date",
 ]
 
@@ -183,9 +192,8 @@ def main():
     all_rows = get_all(
         "outbound_companies_scored",
         "cik,current_name_candidates,former_name_candidates,address_candidates,"
-        "phone_candidates,website_from_edgar,contact_name,people,amount_sold,"
-        "amount_remaining,industry,prior_formd_count,rolled_filing_count,"
-        "also_signed_for,dedupe_status,filing_date,score")
+        "phone_candidates,contact_name,people,amount_sold,industry,"
+        "rolled_filing_count,also_signed_for,dedupe_status,filing_date,score")
     if not all_rows:
         sys.exit("outbound_companies_scored is empty. Run scripts/04_score.py first.")
 
@@ -209,10 +217,8 @@ def main():
             "contact_name": text(r["contact_name"]),
             "people": flat_people(r["people"]),
             "amount_sold": money(r["amount_sold"]),
-            "amount_remaining": money(r["amount_remaining"]),
-            "industry": text(r["industry"]),
-            "prior_formd_count": text(r["prior_formd_count"]),
             "rolled_filing_count": text(r["rolled_filing_count"]),
+            "industry": text(r["industry"]),
             "also_signed_for": joined(r["also_signed_for"]),
             "filing_date": text(r["filing_date"]),
             "score": text(r["score"]),
@@ -277,7 +283,8 @@ def main():
     say("\nelapsed: %.1f min" % ((time.time() - t0) / 60))
     say("cost: $0")
     say("\nCOMPLETE. Nothing uploaded: enrichment_status is untouched, so no row")
-    say("is marked not_selected until the enrichment gate is decided.")
+    say("is reclassified here. What does not fit the free tier is counted in")
+    say("v_funnel as free_tier_row_cap.")
 
 
 if __name__ == "__main__":

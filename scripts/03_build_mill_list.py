@@ -14,7 +14,7 @@ CIK is that company's own head office, and an occurrence test put 101 such
 values on a 213-row list, which would have stripped both address and phone
 from 56 of the 830 surviving companies. See the source of truth, changelog 15.
 
-Runs before the Clay payload is built (step 5), because the payload dedupes
+Runs before the Clay payload is built (step 4), because the payload dedupes
 candidate addresses and phones against this list rather than sending an
 agency's address as if it were the company's own.
 
