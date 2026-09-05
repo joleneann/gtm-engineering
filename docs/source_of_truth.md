@@ -1,12 +1,12 @@
 **INTRODUCTION**
 
-Mercury sells banking and finance operations to startups. This Go-to-Market Engineering build aims to acquire new customers for Mercury by finding companies when they raise funding.
+Mercury sells banking and finance operations to startups. This Go-to-Market Engineering build aims to acquire new customers for Mercury by sending them a cold email when they raise funding.
 
-It is a cold email outreach system triggered by government filings and demonstrates data modelling, edge case handling, schema design, ICP segmentation, scoring logic, and copy. Python ingests and scores leads; Supabase is the truth layer; Clay for enrichment; n8n is the conveyor belt, and Pipedrive is the CRM. I build this with Claude Code, held to a written contract in CLAUDE.md: it wrote the scripts, I made every design call.
+The build demonstrates judgement, system design, data modelling, edge case handling, schema design, ICP segmentation, scoring logic, and copywriting at scale. Python ingests and scores leads; Supabase is the truth layer; Clay for enrichment; n8n is the conveyor belt, and Pipedrive is the CRM. I built this with Claude Code, held to a written contract in CLAUDE.md: it wrote the scripts; I made every design call.
 
 **THE TRIGGER**
 
-I got the idea to look at a funding event from Mercury’s homepage, which declares 1 in 3 startups as their customers \- defining startups as entities reporting funding upto Series A on Crunchbase in the past year.
+I got the idea to look at a funding event from Mercury’s homepage, which declares 1 in 3 startups as their customers - defining startups as entities reporting funding upto Series A on Crunchbase in the past year.
 
 Since Mercury defines its market as companies that just raised, I needed the best possible feed of that event, which, after considering several options, is the SEC Form D. 
 
@@ -22,7 +22,7 @@ Since Mercury defines its market as companies that just raised, I needed the bes
 
 | Source | Why not |
 | :---- | :---- |
-| SEC Form 1-A | A halfway house between a private raise and a stock market listing: the company sells shares to the general public. Few filings \+ filing before the money arrives rather than after, so it is not a cash event. |
+| SEC Form 1-A | A halfway house between a private raise and a stock market listing: the company sells shares to the general public. Few filings + filing before the money arrives rather than after, so it is not a cash event. |
 | 8-K, S-1, 10-Q | Public-company events. Those companies already have treasury desks and banking relationships. Wrong ICP entirely. |
 | Crunchbase, PitchBook, Tracxn, Harmonic | Expensive and derivative: substantially built from Form D plus press, with a delay. |
 | TechCrunch, Google News, Funding RSS | PR coverage skewing big and consumer. Amounts are often unclear, nobody is named, duplication of coverage across outlets |
@@ -34,7 +34,7 @@ Since Mercury defines its market as companies that just raised, I needed the bes
 | Product Hunt/ launch feeds | Launching a product is not a money event. |
 
 **Shortcomings**  
-US incorporated companies that don’t raise under Regulation D \- crowdfunded, bootstrapped, and revenue-financed companies could be great candidates for Mercury, but an alternative pathway had to be built to find them, which is out of scope for this build. 
+US incorporated companies that don’t raise under Regulation D - crowdfunded, bootstrapped, and revenue-financed companies could be great candidates for Mercury, but an alternative pathway had to be built to find them, which is out of scope for this build. 
 
 **PULLING AND STORING DATA**
 
@@ -46,16 +46,16 @@ Python scripts use the REST endpoints from the EDGAR SEC database system to fetc
 
 These raw documents get written whole into Supabase on two tables:
 
-1. **filings\_raw** for all filings with date, keyed on accession number plus CIK \- a compound key, as several companies can be listed in one filing if they sell in the same transaction  
-2. **entities\_raw** keyed on CIK
+1. **filings_raw** for all filings with date, keyed on accession number plus CIK - a compound key, as several companies can be listed in one filing if they sell in the same transaction  
+2. **entities_raw** keyed on CIK
 
 Both tables are upserted, so any re-run is safe and produces no duplicates. Storing the documents whole rather than the fields the model currently uses means a field ruled out today can be refactored tomorrow if the scoring system changes, without a refetch of the documents.
 
-Two things inside a filing repeat and cannot be a single column, so they get child tables joined on (accession\_number, cik): **filing\_related\_persons** (median 2 people per filing, max 15\) and **filing\_former\_names**.
+Two things inside a filing repeat and cannot be a single column, so they get child tables joined on (accession_number, cik): **filing_related_persons** (median 2 people per filing, max 15) and **filing_former_names**.
 
 **Three Route Outs**
 
-**1\. Routing out Funds**
+**1. Routing out Funds**
 
 Form D is filed by funds as well as by operating companies, and this build only caters to companies. Funds are routed out by looking at the values of 2 filing fields catches most of them.
 
@@ -64,25 +64,25 @@ Form D is filed by funds as well as by operating companies, and this build only 
 
 Using either one of the two caused leaks.
 
-They move to table **formd\_funds** as Mercury advertises funds as one of their customer segments. A separate flow can be built for them later as it requires different scoring logic and copy.
+They move to table **formd_funds** as Mercury advertises funds as one of their customer segments. A separate flow can be built for them later as it requires different scoring logic and copy.
 
-**2\. Routing out Unserviceable Companies**
+**2. Routing out Unserviceable Companies**
 
 Mercury serves companies incorporated in the USA and physically located in 1 of 12 countries (US, UK, Canada, India, Singapore, Israel, Netherlands, Spain, Germany, Denmark, Australia or, Mexico)
 
-As filing addresses can sometimes be those of firms or agencies, we primarily read the business addresses from the company history that is required to be kept current with the SEC, and the filing only when history doesn’t have an address (about 0.5% of companies in the demo sample), even tho it carries some risk of accepting non-eligible companies.
+As filing addresses can sometimes be those of firms or agencies, we primarily read the business addresses from the company history that is required to be kept current with the SEC, and the filing only when history doesn’t have an address (about 6% of companies in the demo sample), even tho it carries some risk of accepting non-eligible companies.
 
-Failing rows are routed out to the table **likely\_unserviceable\_companies,** which specifies if they failed on jurisdiction of incorporation or business address. (jurisdiction\_fail and/or address\_fail)
+Failing rows are routed out to the table **likely_unserviceable_companies,** which specifies if they failed on jurisdiction of incorporation or business address. (jurisdiction_fail and/or address_fail)
 
-EDGAR writes countries as its own two-character codes. Each code was looked up against EDGAR's published list, and the eligible country codes are stored in the **serviceable\_countries** table. 
+EDGAR writes countries as its own two-character codes. Each code was looked up against EDGAR's published list, and the eligible country codes are stored in the **serviceable_countries** table. 
 
-**3\. Parking companies with no scorable industry**
+**3. Parking companies with no scorable industry**
 
 A share of the remaining companies select ‘Other’ as their industry group, which our scoring system cannot use. 
 
-In production, I'd send these companies to Clay for industry enrichment and have them come back to Supabase for scoring. For now, they are parked in **no\_industry\_companies**.
+In production, I'd send these companies to Clay for industry enrichment and have them come back to Supabase for scoring. For now, they are parked in **no_industry_companies**.
 
-Remaining companies go to **outbound\_companies\_unscored** for scoring.
+Remaining companies go to **outbound_companies_unscored** for scoring.
 
 **SCORING**
 
@@ -100,9 +100,9 @@ Going deeper into each
 
 **Amount Sold, 5 Points**
 
-Points \= 5 × log10(1 \+ sold / 100\_000) / log10(501), capped at 5.00
+Points = 5 × log10(1 + sold / 100_000) / log10(501), capped at 5.00
 
-Count the raise in units of $100,000, take the log, and scale so $50M and above lands on 5\. The \+1 is what lets a company that sold nothing score exactly zero.
+Count the raise in units of $100,000, take the log, and scale so $50M and above lands on 5. The +1 is what lets a company that sold nothing score exactly zero.
 
 | Raise in $ | Points |
 | :---- | :---- |
@@ -136,8 +136,8 @@ In production, existing and inbound customer tables come from the CRM and will a
 
 The same curve as amount, inverted.
 
-curve(v) \= log10(1 \+ v / 100\_000) / log10(501), capped at 1  
-points   \= 1 \- curve(v)
+curve(v) = log10(1 + v / 100_000) / log10(501), capped at 1  
+points   = 1 - curve(v)
 
 | Raise in $ | Points |
 | :---- | :---- |
@@ -149,7 +149,7 @@ points   \= 1 \- curve(v)
 
 One point goes to the amount still left to raise in the round filed, and it exists to catch companies in the right industry that declared a large offering and have sold none of it. It also adds separation; adding it leaves the model with materially fewer tie groups than amount sold produces on its own.
 
-The assumption is that a company with most of its round closed is closer to making a banking decision. It gets one point rather than more because its correlation with amount points is about \+0.3 on test cases, so it is a weaker second reading of something amount already measures rather than an independent signal.
+The assumption is that a company with most of its round closed is closer to making a banking decision. It gets one point rather than more because its correlation with amount points is about +0.3 on test cases, so it is a weaker second reading of something amount already measures rather than an independent signal.
 
 Zero left to raise lands on exactly 1.00. 
 
@@ -214,44 +214,44 @@ Measured as a count of total Form D’s filed minus the number of Form Ds rolled
 
 * Check internal data on the average conversion time of companies by industry. This would help assign a time window per industry within which outreach should be intensified, as the likelihood of conversion is higher. This would help further prioritise leads and staff for this function.
 
-**mill\_list** stores addresses and phone numbers appearing for 3+ CIKs \- these are suspected agencies and mills filing on behalf of companies. They are removed before the enrichment step, so that the right candidate addresses and phone numbers can be sent.
+**mill_list** stores addresses and phone numbers appearing for 3+ CIKs - these are suspected agencies and mills filing on behalf of companies. They are removed before the enrichment step, so that the right candidate addresses and phone numbers can be sent.
 
 **CLAY PAYLOAD**
 
-Scored companies sit in **outbound\_companies\_scored** with date of filing, all scoring factors, the final score, and the following parameters, ready to be sent to Clay for enrichment
+Scored companies sit in **outbound_companies_scored** with date of filing, all scoring factors, the final score, and the following parameters, ready to be sent to Clay for enrichment
 
-IDX \= Filing Index, XML \= Filing, JSON \= Company History
+IDX = Filing Index, XML = Filing, JSON = Company History
 
 Because people read these columns left to right in a Clay table, the column order follows the workflow: the key and priority, then who and what to search for with evidence to use, then the facts the copy is built from.
 
-| \# | Clay Row Name | Source | Purpose |
+| # | Clay Row Name | Source | Purpose |
 | ----- | ----- | ----- | ----- |
 | 1 | cik | IDX | Company key |
-| 2 | score | **outbound\_industries\_scored** | Prioritising companies |
-| 3 | current\_name | XML entity name \+ JSON name (deduped) | Enrichment |
-| 4 | former\_names | XML previous names \+ JSON former names (deduped) | Enrichment |
-| 5 | contact\_name\_designation | XML signer plus title. Blank if attorney or authorised person/representative | Company contact person \+ Enrichment |
-| 6 | also\_signed\_for | **signer\_list** | Other companies this one person signed for, so 1 person gets one email |
-| 7 | people | XML related persons first name \+ last name \+ relationship, excluding whoever is in contact\_name | Enrichment |
-| 8 | address\_candidates | XML issuer street, city, state, zipcode \+ JSON street, city, state, country, zipcode. Deduped against **mill\_list**. Strip punctuation, expand street types, map state to 2-letter code | Enrichment |
-| 9 | phone\_candidates | XML issuer phone number and JSON phone, digits only with the country code first. Deduped on **mill\_list**. Keep both if different | Enrichment |
+| 2 | score | **outbound_companies_scored** | Prioritising companies |
+| 3 | current_name | XML entity name + JSON name (deduped) | Enrichment |
+| 4 | former_names | XML previous names + JSON former names (deduped) | Enrichment |
+| 5 | contact_name_designation | XML signer plus title. Blank if attorney or authorised person/representative | Company contact person + Enrichment |
+| 6 | also_signed_for | **signer_list** | Other companies this one person signed for, so 1 person gets one email |
+| 7 | people | XML related persons first name + last name + relationship, excluding whoever is in contact_name | Enrichment |
+| 8 | address_candidates | XML issuer street, city, state, zipcode + JSON street, city, state, country, zipcode. Deduped against **mill_list**. Strip punctuation, expand street types, map state to 2-letter code | Enrichment |
+| 9 | phone_candidates | XML issuer phone number and JSON phone, digits only with the country code first. Deduped on **mill_list**. Keep both if different | Enrichment |
 | 10 | industry | XML industry group type |  |
-| 11 | amount\_sold | XML |  |
-| 12 | rolled\_filing\_count | Computed | How many Form D filings were added together to produce amount\_sold |
-| 13 | filing\_date | IDX |  |
+| 11 | amount_sold | XML |  |
+| 12 | rolled_filing_count | Computed | How many Form D filings were added together to produce amount_sold |
+| 13 | filing_date | IDX |  |
 
 **Additional notes**
 
-* people never repeat contact\_name. Matching is on first and last name, lowercased, with honorifics and single-letter initials dropped  
+* people never repeat contact_name. Matching is on first and last name, lowercased, with honorifics and single-letter initials dropped  
 * Two names that share a surname are not merged  
 * people is stored as JSON and sent to Clay as one plain-text column. Supabase keeps it structured because the truth layer is SQL   
-* contact\_name is blanked when the signer is not the company's own officer, on two tests; the filing's authorizedRepresentative flag being true blanks it outright. Otherwise, the free-text signatureTitle is matched against the agent vocabulary: attorney, attorney-in-fact, power of attorney, authorised person, authorised representative, authorised signatory, authorised signer, filing agent, registered agent.  
-* Where contact\_name was blanked as an agent, people stays complete, because it is then the only place a human is named.  
+* contact_name is blanked when the signer is not the company's own officer, on two tests; the filing's authorizedRepresentative flag being true blanks it outright. Otherwise, the free-text signatureTitle is matched against the agent vocabulary: attorney, attorney-in-fact, power of attorney, authorised person, authorised representative, authorised signatory, authorised signer, filing agent, registered agent.  
+* Where contact_name was blanked as an agent, people stays complete, because it is then the only place a human is named.  
 * Phones leave in one written format: digits only, country code first, nothing else.   
 * Block capitals are calmed when the payload row is built.   
-* A person is written to once. Not once per company they signed for, hence the also\_signed\_for column in the Clay table. **signer\_list** counts how many distinct companies each signer covers, built exactly as **mill\_list**.   
-* Every address ever written to is recorded in **contacted\_emails**, keyed on the address rather than the company, because the thing being protected is a person's inbox and it must outlive the run, the company, and the campaign. It is checked in the same pass as the existing-customer and inbound joins, and a match exits dupe\_already\_emailed.   
-* For **mill\_list**, the value is an agency only when more than three distinct companies use it. Membership is counted on distinct CIK. occurrence\_count is still recorded next to distinct\_cik\_count, because the pair is what separates a shared filing agent from a company that simply files often.
+* A person is written to once. Not once per company they signed for, hence the also_signed_for column in the Clay table. **signer_list** counts how many distinct companies each signer covers, built exactly as **mill_list**.   
+* Every address ever written to is recorded in **contacted_emails**, keyed on the address rather than the company, because the thing being protected is a person's inbox and it must outlive the run, the company, and the campaign. It is checked in the same pass as the existing-customer and inbound joins, and a match exits dupe_already_emailed.   
+* For **mill_list**, the value is an agency only when more than three distinct companies use it. Membership is counted on distinct CIK. occurrence_count is still recorded next to distinct_cik_count, because the pair is what separates a shared filing agent from a company that simply files often.
 
 **ENRICHMENT AND COPY**
 
@@ -270,24 +270,24 @@ Clay resolves each company that lands to
 
 **Work Email**
 
-* 14 of 16 work emails were found by inputting domain name, contact name, and designation  
-* ZeroBounce on these emails produced a \+80% validity rate
+* 13 of 16 work emails were found by inputting domain name, contact name, and designation  
+* ZeroBounce on these emails produced a +80% validity rate
 
 **Copy**
 
 * This step took some time and effort on prompt shapes and models  
 * I was finally able to obtain decent copy by giving Claude Sonnet a tight sentence-by-sentence email structure where  
   * The first sentence used the company website and industry to observe how financial operations work within the company  
-  * The second sentence spoke about how Mercury makes FinOps easier and uses amount\_raised as a proxy for cash on hand to explicate Mercury’s relevant benefits  
+  * The second sentence spoke about how Mercury makes FinOps easier and uses amount_raised as a proxy for cash on hand to explicate Mercury’s relevant benefits  
   * Finally, it directs them to a demo and asks them to respond to the email if they’re interested in coming on board
 
 **POST ENRICHMENT DEDUPE**
 
 Enriched data comes back to Supabase to be deduped against three tables
 
-1. **existing\_mercury\_customers** which, as the name suggests, lists existing Mercury customers  
-2. **mercury\_inbound**, which has information of the customers who have inquired on the website  
-3. **contacted\_emails,** which has all the emails of people contacted by the campaign so far
+1. **existing_mercury_customers** which, as the name suggests, lists existing Mercury customers  
+2. **mercury_inbound**, which has information of the customers who have inquired on the website  
+3. **contacted_emails,** which has all the emails of people contacted by the campaign so far
 
 In production, given the volume of customers Mercury already has and the amount of inbound it likely receives, it could get expensive to enrich companies that are later found not to be campaign candidates.
 
@@ -299,26 +299,26 @@ For the demo, we seeded one enriched customer for each and all fired.
 
 n8n comes in after the dedupe.
 
-**1\. Sending Emails**
+**1. Sending Emails**
 
-Once per company, the workflow asks the Supabase table **outbound\_companies\_scored** for records where enrichment\_status is enriched, dedupe\_status is unique, copy\_body is not null, and pipedrive\_deal\_id is null.  
+Once per company, the workflow asks the Supabase table **outbound_companies_scored** for records where enrichment_status is enriched, dedupe_status is unique, copy_body is not null, and pipedrive_deal_id is null.  
 For each one it creates three things in Pipedrive: the organization, the person, and a deal parked at the Enriched stage. 
 
 The deal is titled "Company name, Form D 2026-08-14", valued at the amount sold in USD, and carries the filing date, the score, and the drafted subject and body in custom fields.
 
-Then it immediately writes those three Pipedrive IDs back into the Supabase table, into pipedrive\_org\_id, pipedrive\_person\_id and pipedrive\_deal\_id on the same row, keyed on the company's CIK, along with pipedrive\_synced\_at and a crm\_stage of enriched. 
+Then it immediately writes those three Pipedrive IDs back into the Supabase table, into pipedrive_org_id, pipedrive_person_id and pipedrive_deal_id on the same row, keyed on the company's CIK, along with pipedrive_synced_at and a crm_stage of enriched. 
 
-Then it forks on one question: is is\_test\_row true?
+Then it forks on one question: is is_test_row true?
 
 A real company goes down the bottom branch. It creates a Pipedrive activity of type task called "Draft ready, do not send", linked to the deal, the person and the organization, with the subject and body pasted into the note. The deal stays at Enriched. Nothing is sent. 
 
-A test row goes up the top branch, and gets asked a second question: does work\_email exactly equal the test address? If it passes, the email is sent, we sent two emails for the demo. Pipedrive deal moves to emaled stage and Supabase logs sent\_at and a crm\_stage of emailed, and the address is written to contacted\_emails in lowercase.
+A test row goes up the top branch, and gets asked a second question: does work_email exactly equal the test address? If it passes, the email is sent, we sent two emails for the demo. Pipedrive deal moves to emaled stage and Supabase logs sent_at and a crm_stage of emailed, and the address is written to contacted_emails in lowercase.
 
-**2\. Catching Replies**
+**2. Catching Replies**
 
 When someone replies to a cold email, this flow moves the deal on Pipedrive to Replied.
 
-In production, you would not poll a mailbox: the sending platform pushes a webhook the moment a reply lands. If the sender matches a row already at crm\_stage emailed on **outbound\_companies\_scored**, the deal moves to Replied on Pipedrive, then replied\_at and crm\_stage are written back to **outbound\_companies\_scored**. 
+In production, you would not poll a mailbox: the sending platform pushes a webhook the moment a reply lands. If the sender matches a row already at crm_stage emailed on **outbound_companies_scored**, the deal moves to Replied on Pipedrive, then replied_at and crm_stage are written back to **outbound_companies_scored**. 
 
 **CRM STRUCTURE**
 
@@ -344,9 +344,9 @@ Held, Closed Won and Closed Lost are set by the person working the deal, not by 
 
 Campaign health is read from SQL views
 
-* **v\_funnel** for the pipeline  
-* **v\_outreach** for the CRM leg  
-* **v\_score\_distribution** to see how well the scoring system works and if it gives enough separation of companies
+* **v_funnel** for the pipeline  
+* **v_outreach** for the CRM leg  
+* **v_score_distribution** to see how well the scoring system works and if it gives enough separation of companies
 
 In production, the EDGAR pull runs on a cron. Later, layer on cold calling and email sequences.
 

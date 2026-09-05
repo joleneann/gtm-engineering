@@ -2,10 +2,15 @@
 """
 Enforce the no-drift rule: a withdrawn phrase must never reappear in a live document.
 
-Reads the changelog table at the top of docs/source_of_truth.md, collects every
+Reads the changelog table in docs/changelog.md, collects every
 `withdrawn_phrase`, then READS every file under docs/, plus CLAUDE.md and
 README.md, in full, and fails if any withdrawn phrase is present outside the
 changelog row that retired it.
+
+The changelog lived at the top of docs/source_of_truth.md until 2026-09-05,
+when that document was rewritten whole and the table would have gone with it.
+It is a separate file now so a rewrite of the source of truth cannot silently
+take the enforcement with it.
 
 It reads whole files rather than grepping a filtered subset on purpose. The previous
 version of this check filtered files out of its own search and certified a document as
@@ -21,6 +26,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOT = os.path.join(ROOT, "docs", "source_of_truth.md")
+CHANGELOG = os.path.join(ROOT, "docs", "changelog.md")
 
 
 def read(path):
@@ -48,9 +54,10 @@ def withdrawn_phrases(sot_text):
     # Only the changelog table is parsed strictly. The document holds other
     # numeric tables, the scoring curves among them, whose rows also open with
     # a number and are two cells wide by design.
-    start = next((i for i, l in enumerate(lines) if l.strip() == "## Changelog"), None)
+    start = next((i for i, l in enumerate(lines)
+                  if l.strip() in ("# Changelog", "## Changelog")), None)
     if start is None:
-        return phrases, [(0, 0, "no '## Changelog' heading found in source_of_truth.md")]
+        return phrases, [(0, 0, "no Changelog heading found in docs/changelog.md")]
     end = len(lines)
     for i in range(start + 1, len(lines)):
         if lines[i].startswith("## ") or lines[i].strip() == "---":
@@ -90,11 +97,13 @@ def live_files():
 
 
 def main():
+    if not os.path.exists(CHANGELOG):
+        sys.exit("docs/changelog.md not found. There is nothing to enforce, which is "
+                 "worse than a failure: it means the no-drift rule is silently off.")
     if not os.path.exists(SOT):
-        sys.exit("docs/source_of_truth.md not found. Nothing to check against.")
+        sys.exit("docs/source_of_truth.md not found.")
 
-    sot_text = read(SOT)
-    phrases, malformed = withdrawn_phrases(sot_text)
+    phrases, malformed = withdrawn_phrases(read(CHANGELOG))
     files = live_files()
 
     print("no-drift check")
@@ -108,7 +117,7 @@ def main():
         print("FAIL: %d changelog row(s) do not parse, so their phrases are not enforced"
               % len(malformed))
         for ln, n, snippet in malformed:
-            print("  source_of_truth.md:%d  split into %d cells, expected 4" % (ln, n))
+            print("  changelog.md:%d  split into %d cells, expected 4" % (ln, n))
             print("     %s" % snippet)
         print()
         print("A cell containing a pipe breaks the row. Rewrite the cell without one.")
@@ -120,7 +129,7 @@ def main():
         lines = text.splitlines()
         for i, line in enumerate(lines, 1):
             # the changelog row that retires a phrase is where it is allowed to live
-            is_changelog_row = path == SOT and line.startswith("|") and "2026-" in line
+            is_changelog_row = path == CHANGELOG and line.startswith("|") and "2026-" in line
             if is_changelog_row:
                 continue
             for p in phrases:
