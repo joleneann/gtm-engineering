@@ -82,7 +82,7 @@ Enriched with the drafted subject and body attached to a Pipedrive task, for a h
 | `db/schema.sql` | The single source of truth for the database |
 | `db/migration_*.sql`, `db/revert_*.sql` | Every change applied since, each with its revert |
 | `scripts/` | One script per step, numbered |
-| `n8n/` | The three workflows as JSON |
+| `n8n/` | The two workflows as JSON |
 | `prompts/` | The Claygent copy prompt |
 | `exports/`, `.env` | Gitignored. Real contact data and secrets never enter the repository |
 
@@ -112,7 +112,7 @@ free.
 Step 12 was an IMAP repair and is deleted. It patched a node the reply workflow no longer has, and
 running it today would break the workflow that replaced it.
 
-### The three workflows
+### The two workflows
 
 - **GTME 1, outbound run.** Fetches only rows whose `pipedrive_deal_id` is null, so idempotency is a
   query rather than a find-or-create search. Creates Organization, Person and Deal, writes all three
@@ -121,8 +121,10 @@ running it today would break the workflow that replaced it.
 - **GTME 2, reply catcher.** Reads Gmail over OAuth, scoped by a sender query. Matches the sender
   against a row already at stage Emailed, moves that deal to Replied, stamps `replied_at`. A reply
   from someone we never wrote to matches nothing and ends quietly.
-- **GTME 3, flywheel.** Won deals become rows in `existing_mercury_customers`, so the next Form D from
-  that company is deduped out instead of emailed.
+A third workflow wrote won Pipedrive deals back into `existing_mercury_customers` on a six-hour
+schedule. It is removed. It added nothing the demo shows, and it inserted without a conflict key
+against a table with no unique constraint on `domain`, so it would have written a duplicate row per
+won deal four times a day. The dedupe still reads that table; it is populated by the seed.
 
 Credentials live in n8n, never in these files: the workflows carry the placeholders `SUPABASE_CRED`,
 `PIPEDRIVE_CRED` and `GMAIL_CRED`, resolved at install time. There is no webhook anywhere, because a
