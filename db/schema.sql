@@ -3,11 +3,16 @@
 -- Source of truth: docs/source_of_truth.md
 --
 -- Applied by hand in the Supabase SQL editor. Never by a script, never
--- through MCP. 17 tables, 2 views.
+-- through MCP. 20 tables, 3 views.
 --
--- Version: 001
--- Date:    2026-09-02
--- Revert:  db/revert_001.sql
+-- This file is the current state, not the first version. Every migration
+-- under db/ has been folded back into it, so what is written here is what
+-- is running. The migrations are kept alongside it as the history, each
+-- with its own revert.
+--
+-- Current through: migration 008
+-- Date:            2026-09-05
+-- Revert:          each db/revert_00N.sql, newest first
 -- =====================================================================
 
 

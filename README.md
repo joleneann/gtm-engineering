@@ -10,6 +10,12 @@ business banking question. Mercury's own homepage defines its market as companie
 Python ingests and scores. Supabase is the truth layer. Clay enriches and writes the copy. n8n is the
 conveyor belt into Pipedrive and back out to Gmail.
 
+**The database:** [`db/schema.sql`](db/schema.sql) is every table and column, with the reasoning for each written beside it. 20 tables, 3 views, current through migration 008.
+No contact data is in the repo: it lives only in Supabase.
+
+**The live Clay table:** https://app.clay.com/shared-table/share_0tksltsGqbxZpRSzanz
+The 50 rows that went out for enrichment, with the columns Clay ran and what each one returned.
+
 **`docs/source_of_truth.md` is the authority on every fact in this build.** This file is the short
 version and defers to it wherever the two could be read differently.
 
