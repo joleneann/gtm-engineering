@@ -330,10 +330,6 @@ Three per company: Organization is the company, Person is the human who gets the
 
 One of each per company, because each company has exactly one row in Supabase and GTME 1 only picks up rows with no Deal yet. A company that raises again before becoming a customer does not get a second Deal: step 04 sums both raises into one row inside a 365-day window and records how many filings were added, so what reaches Pipedrive is one company, one Deal, one figure.
 
-**The objects**
-
-Each company gets one of each: Organization is the company, Person is the human who gets the email, Deal is the raise. 
-
 **The stages**
 
 Enriched, Emailed, Replied, Held, Closed Won, Closed Lost. Every Deal is created at Enriched, meaning it has a validated work email and written copy.
