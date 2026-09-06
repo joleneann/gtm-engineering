@@ -174,12 +174,3 @@ and never through MCP. Supabase MCP is read-only and for inspection.
 - **Every number is measured.** No count, rate or ranking appears anywhere until a script has produced
   it, and a figure is labelled quoted or derived.
 - **A missing value is not a disqualification.** Nulls route out with a code and are counted.
-
-## What this build cannot report
-
-Reply rate, open rate, deliverability, cost per lead, the domain resolution rate, and the natural
-dedupe rates. The replies are its own test emails; there is no open tracking, deliberately, because a
-pixel or a redirect domain is what harms deliverability; nothing was paid for, so there is no cost
-table; 16 of 50 domains is where the free tier stopped, not a resolution rate; and all three dedupe
-codes fired against seeded rows. A view reporting any of them would be reporting a number nobody
-measured.
