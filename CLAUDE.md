@@ -14,14 +14,14 @@ before any code is written, any schema applied, or the turn ends:
 1. `docs/source_of_truth.md` is edited so it **reads correctly**. The superseded sentence is deleted.
    Never annotated, never left standing next to its own correction.
 2. This file is edited if the decision changes a rule.
-3. The changelog at the top of `docs/source_of_truth.md` gains a dated row: what changed, and the
-   `withdrawn_phrase` that must never reappear.
+3. `docs/changelog.md` gains a dated row: what changed, and the `withdrawn_phrase` that must never
+   reappear. It sits in its own file so that rewriting the source of truth cannot take it along.
 
 A turn that ends with a decision made and the documents not updated is a defect, and it is fixed
 before anything else proceeds.
 
-Enforced by `scripts/00_doc_check.py`, which **reads every file** under `docs/` and this file in full
-and fails if a withdrawn phrase reappears. It reads rather than greps a filtered subset, because the
+Enforced by `scripts/00_doc_check.py`, which **reads every file** under `docs/`, this file, and
+`README.md` in full and fails if a withdrawn phrase reappears. It reads rather than greps a filtered subset, because the
 previous version of this check certified a file as clean while the withdrawn rule was sitting in it.
 Run it at the end of every step.
 
@@ -42,8 +42,8 @@ of truth.
 - Execute only the step named this session. Do not start, scaffold, or prepare future steps. Do not
   refactor earlier steps unless asked.
 - Two things are never designed alone: the scoring model and the CRM data model. Bring candidates and
-  reasoning; never present a finished model. The scoring model is settled and lives in the source of
-  truth. The CRM model is not.
+  reasoning; never present a finished model. Both are settled now and live in the source of truth, so
+  changing either means reopening a decision: propose it and wait.
 
 ## Method sheet before every step
 

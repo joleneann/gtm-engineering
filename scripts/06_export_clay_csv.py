@@ -10,8 +10,8 @@ column.
 Columns are the payload named in the source of truth, in that order, plus
 rolled_filing_count (changelog 16) so a summed amount is never read as a
 single raise, and also_signed_for (changelog 23) naming the other companies
-the same person signed for, which sits beside contact_name because it is a
-fact about that person.
+the same person signed for, which sits beside contact_name_designation because
+it is a fact about that person.
 
 Three columns are deliberately absent. website_from_edgar is empty on all 830
 scored companies (changelog 27). amount_remaining and prior_formd_count are
@@ -74,8 +74,8 @@ JUNK = ("None", "null", "[]", "{}", "N/A", "n/a", "NA", "none",
 # The order the work is done in, because a person reads these left to right in a
 # Clay table: the key and the priority, then who and what to search for, then the
 # evidence that confirms an answer, then the facts the copy is built from.
-# also_signed_for sits beside contact_name because it is a fact about that
-# person, not about this company.
+# also_signed_for sits beside contact_name_designation because it is a fact
+# about that person, not about this company.
 # rolled_filing_count follows amount_sold, because it is how many filings that
 # figure adds together and is meaningless anywhere else.
 # website_from_edgar is deliberately absent: measured empty on all 830 scored
@@ -87,7 +87,7 @@ COLUMNS = [
     "score",
     "current_name",
     "former_names",
-    "contact_name",
+    "contact_name_designation",
     "also_signed_for",
     "people",
     "address_candidates",
@@ -214,7 +214,7 @@ def main():
             "former_names": joined(r["former_name_candidates"]),
             "address_candidates": joined(r["address_candidates"]),
             "phone_candidates": joined(r["phone_candidates"]),
-            "contact_name": text(r["contact_name"]),
+            "contact_name_designation": text(r["contact_name"]),
             "people": flat_people(r["people"]),
             "amount_sold": money(r["amount_sold"]),
             "rolled_filing_count": text(r["rolled_filing_count"]),
@@ -275,7 +275,8 @@ def main():
     say("\nfirst 3 rows, people and candidates as Clay will see them:")
     for r in out[:3]:
         say("   %s  score %s" % (r["current_name"][:40], r["score"]))
-        say("      contact_name : %s" % (r["contact_name"] or "(blank, agent)"))
+        say("      contact_name_designation : %s"
+            % (r["contact_name_designation"] or "(blank, agent)"))
         say("      people       : %s" % (r["people"][:100] or "(none)"))
         say("      address      : %s" % (r["address_candidates"][:100] or "(none)"))
         say("      phone        : %s" % (r["phone_candidates"] or "(none)"))
