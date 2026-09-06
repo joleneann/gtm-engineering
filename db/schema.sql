@@ -10,8 +10,8 @@
 -- is running. The migrations are kept alongside it as the history, each
 -- with its own revert.
 --
--- Current through: migration 008
--- Date:            2026-09-05
+-- Current through: migration 009
+-- Date:            2026-09-06
 -- Revert:          each db/revert_00N.sql, newest first
 -- =====================================================================
 
@@ -885,40 +885,46 @@ on conflict (industry_group_type) do update
        rank       = excluded.rank;
 
 
+-- Twelve codes, every rate read from v_funnel on 2026-09-06 rather than from a
+-- design. Seeded at version 001, corrected by db/migration_006_reason_codes.sql
+-- and db/migration_009_reason_codes_from_funnel.sql, both folded in here.
 insert into reason_codes (code, stage, exits_to_table, description, measured_rate, seq) values
  ('scope_pooled_investment_fund', 'route',  'formd_funds',
   'Pooled investment fund by industry group or by the securities-offered tick. Out of scope for this build, not ineligible.',
-  '62% of filings (120/193 and 103/165)', 1),
+  '1,664 companies, 56.35% of ingested', 1),
  ('scope_non_us_incorporation',   'route',  'likely_unserviceable_companies',
   'stateOfIncorporation is not a US state or territory code.',
-  '10% of 40 companies sampled', 2),
+  '232 companies, 7.86% of ingested', 2),
  ('scope_unsupported_country',    'route',  'likely_unserviceable_companies',
   'Business address is outside Mercury''s twelve serviceable countries.',
-  '5% of 40 companies sampled', 3),
+  '11 companies, 0.37% of ingested', 3),
  ('scope_industry_other',         'route',  'no_industry_companies',
   'industryGroupType = Other. Parked for a later Clay industry-enrichment path, not discarded.',
-  '18-24% of operating companies (13/73 and 15/62)', 4),
- ('not_selected',                 'enrich', null,
-  'Scored but below the cutoff for a Clay enrichment slot.',
-  '~900 scored against a 200-row Clay free tier', 5),
+  '216 companies, 7.31% of ingested', 4),
+ ('free_tier_row_cap',            'enrich', null,
+  'Never sent to Clay: the row did not fit inside the 200-row free table. A budget boundary, not a failed enrichment.',
+  '750 of the 830 scored, 25.40% of ingested', 5),
  ('enrich_no_domain',             'enrich', null,
   'Clay could not resolve the company to a website.',
-  'unmeasured until Clay runs', 6),
+  '0 of the 50 sent to Clay', 6),
  ('enrich_no_work_email',         'enrich', null,
   'Domain resolved but no verified work email found.',
-  'unmeasured until Clay runs', 7),
+  '3 of the 50 sent to Clay', 7),
+ ('clay_credits_exhausted',       'enrich', null,
+  'Sent to Clay but the free tier credits ran out before the row was finished. Some came back with nothing at all; others resolved a domain and an email but never got copy. A budget boundary, not a failed enrichment.',
+  '34 of the 50 sent returned nothing, and 5 of the 10 dedupe survivors have no copy', 8),
  ('dupe_existing_customer',       'dedupe', null,
   'Apex domain matches an existing Mercury customer.',
-  'guaranteed by the 3 seeded customers', 8),
+  '1 of the 13 enriched, against a seeded customer. Never measured naturally at this volume', 9),
  ('dupe_inbound',                 'dedupe', null,
   'Apex domain matches a company that already came in through inbound.',
-  'guaranteed by the 2 seeded inbound rows', 9),
+  '1 of the 13 enriched, against a seeded inbound company. Never measured naturally at this volume', 10),
  ('dupe_same_signer',             'dedupe', null,
   'One human signs Form D for more than three companies. The highest scoring is contacted, the rest are kept and point at it.',
-  '30 of 830 companies, across 4 signers', 10),
+  '30 of the 830 scored, across 4 signers', 11),
  ('dupe_already_emailed',         'dedupe', null,
   'The resolved work email is already in contacted_emails, so this person has been written to before.',
-  'unmeasured until Clay returns addresses and the demo seed is added', 11)
+  '1 of the 13 enriched, against a seeded address. Never measured naturally at this volume', 12)
 on conflict (code) do update
    set stage = excluded.stage,
        exits_to_table = excluded.exits_to_table,

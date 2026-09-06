@@ -1,6 +1,8 @@
 -- Migration 006: make reason_codes describe what actually happened.
 --
--- PROPOSED. Not applied. Apply through the Supabase SQL editor.
+-- Applied 2026-09-04 through the Supabase SQL editor. Its figures were
+-- superseded by db/migration_009_reason_codes_from_funnel.sql, which re-read
+-- every rate after migrations 007 and 008 rebuilt v_funnel.
 --
 -- Three things are wrong with the seeded table, all of them staleness rather
 -- than design:

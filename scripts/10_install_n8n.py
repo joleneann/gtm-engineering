@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step 10: install the three workflows into the local n8n.
+Step 10: install the two workflows into the local n8n.
 
 Creates the two header credentials from the keys already in .env, rewrites the
 placeholder credential ids in the workflow files to the real ones, and posts the
