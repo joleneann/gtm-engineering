@@ -19,6 +19,8 @@ The 50 rows that went out for enrichment, with the columns Clay ran and what eac
 **`docs/source_of_truth.md` is the authority on every fact in this build.** This file is the short
 version and defers to it wherever the two could be read differently.
 
+![The pipeline, end to end](docs/pipeline.svg)
+
 ---
 
 ## What it did, measured 2026-09-04
