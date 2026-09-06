@@ -344,5 +344,26 @@ Campaign health is read from SQL views
 * **v_outreach** for the CRM leg  
 * **v_score_distribution** to see how well the scoring system works and if it gives enough separation of companies
 
+**Reason codes**
+
+Every company that leaves the run carries a code saying why. The full list is held in **reason_codes**, in the order the codes fire, with the rate each was measured at across the 2,953 companies ingested.
+
+| Code | Stage | What it means | Measured |
+| ----- | ----- | ----- | ----- |
+| scope_pooled_investment_fund | route | Fund by industry group or by the securities-offered tick. Out of scope, not ineligible | 1,664 companies, 56.35% |
+| scope_non_us_incorporation | route | stateOfIncorporation is not a US state or territory | 232 companies, 7.86% |
+| scope_unsupported_country | route | Business address outside Mercury's twelve serviceable countries | 11 companies, 0.37% |
+| scope_industry_other | route | Industry group is Other. Parked for a later enrichment path, not discarded | 216 companies, 7.31% |
+| dupe_same_signer | dedupe | One person signs for more than three companies. The highest scoring is contacted, the rest point at it | 30 of the 830 scored, across 4 signers |
+| free_tier_row_cap | enrich | Never sent to Clay: the row did not fit inside the 200-row free table | 750 of the 830 scored |
+| clay_credits_exhausted | enrich | Sent to Clay, but the credits ran out before the row was finished | 34 of the 50 sent came back empty, and 5 of the 10 survivors have no copy |
+| enrich_no_domain | enrich | Clay could not resolve the company to a website | 0 of the 50 sent |
+| enrich_no_work_email | enrich | Domain resolved but no verified work email | 3 of the 50 sent |
+| dupe_existing_customer | dedupe | Apex domain matches an existing Mercury customer | 1 of the 13 enriched, seeded |
+| dupe_inbound | dedupe | Apex domain matches a company that already came in through inbound | 1 of the 13 enriched, seeded |
+| dupe_already_emailed | dedupe | The work email is already in **contacted_emails**, so this person has been written to before | 1 of the 13 enriched, seeded |
+
+A code for a condition that cannot occur is padding, so none is kept. enrich_no_domain stayed because it can happen and simply did not: Claygent resolved a domain for every company Clay reached.
+
 In production, the EDGAR pull runs on a cron. Later, layer on cold calling and email sequences.
 
