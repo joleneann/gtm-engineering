@@ -2,11 +2,11 @@
 
 Mercury sells banking and finance operations to startups. This Go-to-Market Engineering build aims to acquire new customers for Mercury by sending them a cold email when they raise funding.
 
-The build demonstrates system design, data modelling, edge case handling, schema design, ICP segmentation, scoring logic, and copywriting at scale. Python ingests and scores leads; Supabase is the truth layer; Clay for enrichment; n8n is the conveyor belt, and Pipedrive is the CRM. I built this with Claude Code, held to a written contract in CLAUDE.md: it wrote the scripts; I made every design call.
+The build demonstrates system design, data modelling, edge case handling, schema design, ICP segmentation, scoring logic, and copywriting at scale. Python ingests and scores leads; Supabase is the truth layer; Clay for enrichment; n8n is the conveyor belt, and Pipedrive is the CRM. I built this with Claude Code, held to a written contract in [CLAUDE.md](../CLAUDE.md): it wrote the scripts; I made every design call.
 
 **THE TRIGGER**
 
-I got the idea to look at a funding event from Mercury’s homepage, which declares 1 in 3 startups as their customers - defining startups as entities reporting funding upto Series A on Crunchbase in the past year.
+I got the idea to look at a funding event from [Mercury’s homepage](sources/mercury_treasury_2026-08-28.md), which declares [1 in 3 startups as their customers](sources/mercury_public_customers_2026-08-28.md) - defining startups as entities reporting funding upto Series A on Crunchbase in the past year.
 
 Since Mercury defines its market as companies that just raised, I needed the best possible feed of that event, which, after considering several options, is the SEC Form D. 
 
@@ -38,13 +38,13 @@ US incorporated companies that don’t raise under Regulation D - crowdfunded, b
 
 **PULLING AND STORING DATA**
 
-Python scripts use the REST endpoints from the EDGAR SEC database system to fetch
+[Python scripts](../scripts/01_ingest_form_d.py) use the REST endpoints from the EDGAR SEC database system to fetch
 
 * The daily filing index, which has form type in the first column. This helps the system only pull Form Ds, which we need  
 * Each Form D of the day in XML  
 * Each company’s filing history in JSON
 
-These become 2 Supabase tables:
+These become 2 [Supabase tables](../db/schema.sql):
 
 1. **filings_raw** for all filings with date, keyed on accession number plus CIK - a compound key, as several companies can be listed in one filing if they sell in the same transaction  
 2. **entities_raw** keyed on CIK
@@ -53,7 +53,7 @@ Both tables are upserted, so any re-run is safe and produces no duplicates. Stor
 
 Two things inside a filing repeat and cannot be a single column, so they get child tables joined on (accession_number, cik): **filing_related_persons** (median 2 people per filing, max 15) and **filing_former_names**.
 
-**Three Route Outs**
+**[Three Route Outs](../scripts/02_route.py)**
 
 **1. Routing out Funds**
 
@@ -64,7 +64,7 @@ Form D is filed by funds as well as by operating companies, and this build only 
 
 Using either one of the two caused leaks.
 
-They move to table **formd_funds** as Mercury advertises funds as one of their customer segments. A separate flow can be built for them later as it requires different scoring logic and copy.
+They move to table **formd_funds** as [Mercury advertises funds as one of their customer segments](sources/mercury_vc_funds_2026-08-28.md). A separate flow can be built for them later as it requires different scoring logic and copy.
 
 **2. Routing out Unserviceable Companies**
 
@@ -74,7 +74,7 @@ As filing addresses can sometimes be those of firms or agencies, we primarily re
 
 Failing rows are routed out to the table **likely_unserviceable_companies,** which specifies if they failed on jurisdiction of incorporation or business address. (jurisdiction_fail and/or address_fail)
 
-EDGAR writes countries as its own two-character codes. Each code was looked up against EDGAR's published list, and the eligible country codes are stored in the **serviceable_countries** table. 
+[EDGAR writes countries as its own two-character codes](../db/migration_002_edgar_codes.sql). Each code was looked up against [EDGAR's published list](sources/edgar_state_country_codes_2026-09-02.txt), and the eligible country codes are stored in the **[serviceable_countries](../db/seed_serviceable_countries.sql)** table. 
 
 **3. Parking companies with no scorable industry**
 
@@ -86,7 +86,7 @@ Remaining companies go to **outbound_companies_unscored** for scoring.
 
 **SCORING**
 
-The scoring model I designed for this demo is simple with 4 inputs, totaling 10 points upto 2 decimal places, upon which a company’s score is determined.  
+[The scoring model](../scripts/04_score.py) I designed for this demo is simple with 4 inputs, totaling 10 points upto 2 decimal places, upon which a company’s score is determined.  
 Scoring parameters had to be taken from fields which were reliably 100% coverage in the data.
 
 | Input | Max | Source | Direction | Shape |
@@ -117,7 +117,7 @@ Count the raise in units of $100,000, take the log, and scale so $50M and above 
 
 This is a proxy for the cash a company has on hand at the moment in time of the filing.
 
-Log, because three of the seller's four boundaries are powers of ten. Mercury's inbound form makes every prospect pick from 5 expected balance bands bounded at $100k, $1m, $10m and $50m, and the first three are 10⁵, 10⁶ and 10⁷: each band ten times the last. A seller that widens its buckets by a constant multiple is thinking about money logarithmically. 
+Log, because three of the seller's four boundaries are powers of ten. [Mercury's inbound form](sources/mercury_inbound_form_bands_2026-08-31.md) makes every prospect pick from 5 expected balance bands bounded at $100k, $1m, $10m and $50m, and the first three are 10⁵, 10⁶ and 10⁷: each band ten times the last. A seller that widens its buckets by a constant multiple is thinking about money logarithmically. 
 
 My first instinct was to let the data decide and let each day’s filings set their own percentiles but company score will constantly shift and make the system hard to maintain.
 
@@ -157,6 +157,8 @@ Zero left to raise lands on exactly 1.00.
 
 [https://www.sec.gov/files/formd.pdf](https://www.sec.gov/files/formd.pdf)
 
+Captured: [the form itself](sources/sec_form_d_official_2026-08-29.md), [how EDGAR spells these group names](sources/edgar_industry_enum_spelling_2026-09-02.md), and [the four that had to be respelled to match](../db/fix_004_industry_codes.sql).
+
 | Group | SEC Filing Code | Points |
 | ----- | ----- | ----- |
 | Technology | Other Technology | 3.00 |
@@ -195,7 +197,7 @@ Zero left to raise lands on exactly 1.00.
 
 The next three points go to industry suitability.  
 In production, Mercury companies will be coded according to the SEC’s filing codes and ordered by lifetime value.   
-For the demo, I assumed and seeded LTV.
+For the demo, I assumed and [seeded LTV](industry_clusters.png).
 
 **Prior Form D Filings, 1 point**
 
@@ -214,9 +216,9 @@ Measured as a count of total Form D’s filed minus the number of Form Ds rolled
 
 * Check internal data on the average conversion time of companies by industry. This would help assign a time window per industry within which outreach should be intensified, as the likelihood of conversion is higher. This would help further prioritise leads and staff for this function.
 
-**mill_list** stores addresses and phone numbers appearing for 4+ CIKs - these are suspected agencies and mills filing on behalf of companies. They are removed before the enrichment step, so that the right candidate addresses and phone numbers can be sent.
+**[mill_list](../scripts/03_build_mill_list.py)** stores addresses and phone numbers appearing for 4+ CIKs - these are suspected agencies and mills filing on behalf of companies. They are removed before the enrichment step, so that the right candidate addresses and phone numbers can be sent.
 
-**CLAY PAYLOAD**
+**[CLAY PAYLOAD](../scripts/06_export_clay_csv.py)**
 
 Scored companies sit in **outbound_companies_scored** with date of filing, all scoring factors, the final score, and the following parameters, ready to be sent to Clay for enrichment
 
@@ -249,11 +251,11 @@ Because people read these columns left to right in a Clay table, the column orde
 * Where contact_name was blanked as an agent, people stays complete, because it is then the only place a human is named.  
 * Phones leave in one written format: digits only, country code first, nothing else.   
 * Block capitals are calmed when the payload row is built.   
-* A person is written to once. Not once per company they signed for, hence the also_signed_for column in the Clay table. **signer_list** counts how many distinct companies each signer covers, built exactly as **mill_list**.   
-* Every address ever written to is recorded in **contacted_emails**, keyed on the address rather than the company, because the thing being protected is a person's inbox and it must outlive the run, the company, and the campaign. It is checked in the same pass as the existing-customer and inbound joins, and a match exits dupe_already_emailed.   
+* A person is written to once. Not once per company they signed for, hence the also_signed_for column in the Clay table. **[signer_list](../scripts/05_collapse_signers.py)** counts how many distinct companies each signer covers, built exactly as **mill_list**.   
+* Every address ever written to is recorded in **[contacted_emails](../db/migration_005_signer_and_email_dedupe.sql)**, keyed on the address rather than the company, because the thing being protected is a person's inbox and it must outlive the run, the company, and the campaign. It is checked in the same pass as the existing-customer and inbound joins, and a match exits dupe_already_emailed.   
 * For **mill_list**, the value is an agency only when more than three distinct companies use it. Membership is counted on distinct CIK. occurrence_count is still recorded next to distinct_cik_count, because the pair is what separates a shared filing agent from a company that simply files often.
 
-**ENRICHMENT AND COPY**
+**[ENRICHMENT AND COPY](../scripts/07_import_clay_results.py)**
 
 Clay resolves each company that lands to
 
@@ -276,12 +278,12 @@ Clay resolves each company that lands to
 **Copy**
 
 * This step took some time and effort on prompt shapes and models  
-* I was finally able to obtain decent copy by giving Claude Sonnet a tight sentence-by-sentence email structure where  
+* I was finally able to obtain decent copy by giving Claude Sonnet a [tight sentence-by-sentence email structure](../prompts/claygent_copy.md) where  
   * The first sentence used the company website and industry to observe how financial operations work within the company  
-  * The second sentence spoke about how Mercury makes FinOps easier and uses amount_raised as a proxy for cash on hand to explicate Mercury’s relevant benefits  
-  * Finally, it directs them to a demo and asks them to respond to the email if they’re interested in coming on board
+  * The second sentence spoke about how [Mercury makes FinOps easier](sources/competitor_yields_2026-08-28.md) and uses amount_raised as a proxy for cash on hand to explicate [Mercury’s relevant benefits](sources/mercury_site_constants_2026-08-28.json)  
+  * Finally, it directs them to [a demo](sources/mercury_demo_2026-08-29.md) and asks them to respond to the email if they’re interested in coming on board
 
-**POST ENRICHMENT DEDUPE**
+**[POST ENRICHMENT DEDUPE](../scripts/08_dedupe.py)**
 
 Enriched data comes back to Supabase to be deduped against three tables
 
@@ -297,14 +299,14 @@ For the demo, we seeded one enriched customer for each and all fired.
 
 **LOGGING PROGRESS WITH N8N**
 
-n8n comes in after the dedupe.
+n8n comes in after the dedupe. Start it with [run_n8n.sh](../run_n8n.sh). [10_install_n8n.py](../scripts/10_install_n8n.py) installs the workflows, [13_install_workflow_offline.py](../scripts/13_install_workflow_offline.py) does it with n8n stopped, and [11_reset_demo.py](../scripts/11_reset_demo.py) clears the CRM leg so the demo can be run again from nothing.
 
-**1. Sending Emails**
+**[1. Sending Emails](../n8n/wf1_outbound_run.json)**
 
 Once per company, the workflow asks the Supabase table **outbound_companies_scored** for records where enrichment_status is enriched, dedupe_status is unique, copy_body is not null, and pipedrive_deal_id is null.  
 For each one it creates three things in Pipedrive: the organization, the person, and a deal parked at the Enriched stage. 
 
-The deal is titled "Company name, Form D 2026-08-14", valued at the amount sold in USD, and carries the filing date, the score, and the drafted subject and body in custom fields.
+The deal is titled "Company name, Form D 2026-08-14", valued at the amount sold in USD, and carries the filing date, the score, and the drafted subject and body in [custom fields](sources/pipedrive_fields_2026-09-04.md).
 
 Then it immediately writes those three Pipedrive IDs back into the Supabase table, into pipedrive_org_id, pipedrive_person_id and pipedrive_deal_id on the same row, keyed on the company's CIK, along with pipedrive_synced_at and a crm_stage of enriched. 
 
@@ -314,13 +316,13 @@ A real company goes down the bottom branch. It creates a Pipedrive activity of t
 
 A test row goes up the top branch, and gets asked a second question: does work_email exactly equal the test address? If it passes, the email is sent, we sent two emails for the demo. Pipedrive deal moves to emaled stage and Supabase logs sent_at and a crm_stage of emailed, and the address is written to contacted_emails in lowercase.
 
-**2. Catching Replies**
+**[2. Catching Replies](../n8n/wf2_reply_catcher.json)**
 
 When someone replies to a cold email, this flow moves the deal on Pipedrive to Replied.
 
 In production, you would not poll a mailbox: the sending platform pushes a webhook the moment a reply lands. If the sender matches a row already at crm_stage emailed on **outbound_companies_scored**, the deal moves to Replied on Pipedrive, then replied_at and crm_stage are written back to **outbound_companies_scored**. 
 
-**CRM STRUCTURE**
+**[CRM STRUCTURE](../scripts/09_pipedrive_probe.py)**
 
 HubSpot has no free trial without a work email ID, so I chose Pipedrive.
 
@@ -341,8 +343,10 @@ Held, Closed Won and Closed Lost are set by the person working the deal, not by 
 Campaign health is read from SQL views
 
 * **v_funnel** for the pipeline  
-* **v_outreach** for the CRM leg  
-* **v_score_distribution** to see how well the scoring system works and if it gives enough separation of companies
+* **[v_outreach](../db/migration_003_views.sql)** for the CRM leg  
+* **[v_score_distribution](../db/schema.sql)** to see how well the scoring system works and if it gives enough separation of companies
+
+v_funnel was corrected twice after it was built: [once so it counts companies rather than filings](../db/migration_007_funnel_companies.sql), and [once so its first level stopped counting the same 2,953 twice](../db/migration_008_funnel_ingested_level.sql). [14_backfill_sent_to_clay.py](../scripts/14_backfill_sent_to_clay.py) fills the column that lets it tell a company Clay never saw from one that returned nothing.
 
 **Reason codes**
 
