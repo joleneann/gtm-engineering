@@ -16,7 +16,7 @@ No contact data is in the repo: it lives only in Supabase.
 **The live Clay table:** https://app.clay.com/shared-table/share_0tksltsGqbxZpRSzanz
 The 50 rows that went out for enrichment, with the columns Clay ran and what each one returned.
 
-**`docs/source_of_truth.md` is the authority on every fact in this build.** This file is the short
+**[`docs/source_of_truth.md`](docs/source_of_truth.md) is the authority on every fact in this build.** This file is the short
 version and defers to it wherever the two could be read differently.
 
 <p align="center">
