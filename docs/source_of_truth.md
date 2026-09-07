@@ -214,7 +214,7 @@ Measured as a count of total Form D’s filed minus the number of Form Ds rolled
 
 **Scoring factor I’ll consider adding in prod**
 
-* Check internal data on the average conversion time of companies by industry. This would help assign a time window per industry within which outreach should be intensified, as the likelihood of conversion is higher. This would help further prioritise leads and staff for this function.
+* Check internal data on the average conversion time of companies from time of raising funding, by industry. This would help assign a time window per industry within which outreach should be intensified, as the likelihood of conversion is higher. This would help further prioritise leads and staff for this function.
 
 **[mill_list](../scripts/03_build_mill_list.py)** stores addresses and phone numbers appearing for 4+ CIKs - these are suspected agencies and mills filing on behalf of companies. They are removed before the enrichment step, so that the right candidate addresses and phone numbers can be sent.
 
