@@ -86,7 +86,7 @@ Remaining companies go to **outbound_companies_unscored** for scoring.
 
 **SCORING**
 
-[The scoring model](../scripts/04_score.py) I designed for this demo is simple with 4 inputs, totaling 10 points upto 2 decimal places, upon which a company’s score is determined.  
+[The scoring model](../scripts/04_score.py) I designed for this demo has 4 inputs, totaling 10 points upto 2 decimal places, upon which a company’s score is determined.  
 Scoring parameters had to be taken from fields which were reliably 100% coverage in the data.
 
 | Input | Max | Source | Direction | Shape |
